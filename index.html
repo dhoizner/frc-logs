@@ -595,9 +595,10 @@ function noData(el, msg = 'No data for this key in the log') {
 
 function kpis(parent, tiles) {
   const g = document.createElement('div'); g.className = 'kpi-grid';
-  for (const { label, value, unit } of tiles) {
+  for (const { label, value, unit, valueColor } of tiles) {
     const d = document.createElement('div'); d.className = 'kpi';
-    d.innerHTML = `<div class="label">${label}</div><div class="value">${value}${unit ? '<span class="unit">'+unit+'</span>' : ''}</div>`;
+    const colorStyle = valueColor ? ` style="color:${valueColor}"` : '';
+    d.innerHTML = `<div class="label">${label}</div><div class="value"${colorStyle}>${value}${unit ? '<span class="unit">'+unit+'</span>' : ''}</div>`;
     g.appendChild(d);
   }
   parent.appendChild(g);
@@ -784,9 +785,7 @@ function renderOverview(panel, P, minT, maxT) {
       { label: 'Peak Swerve Speed',   value: fmt(peakVel, 2), unit: 'm/s' },
       { label: 'Peak Shooter Error',  value: fmt(peakVal(shooterErr?.map ? shooterErr : []), 0), unit: 'RPM' },
       { label: 'Peak Turret Error',   value: fmt(peakVal(turretErr), 1), unit: '°' },
-      { label: 'Loop Overruns',
-        value: `<span class="overrun-chip ${overrunCount < 5 ? 'ok':'warn'}">${overrunCount}</span>`,
-        unit: '' },
+      { label: 'Loop Overruns',        value: String(overrunCount), unit: '', valueColor: overrunCount < 5 ? 'var(--green)' : 'var(--red)' },
       { label: 'Log Duration',        value: fmt(maxT - minT, 1), unit: 's' },
       { label: 'Time Enabled',        value: fmt(timeEnabled, 1), unit: 's' },
       { label: 'SOTM Ready %',         value: fmt(sotmFreePct, 1), unit: '%' },
