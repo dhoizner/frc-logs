@@ -136,8 +136,9 @@ tr:hover td{background:var(--surface2)}
 .cloud-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .cloud-header h3{font-size:13px;font-weight:700;color:var(--muted);margin:0}
 #cloud-status{font-size:11px;color:var(--muted);margin-top:6px;font-style:italic}
-#load-toast{position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-size:13px;color:var(--text);display:none;align-items:center;gap:10px;z-index:600;box-shadow:0 4px 16px rgba(0,0,0,.4)}
-#load-toast.show{display:flex}
+#toast-container{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:8px;z-index:600;align-items:flex-end}
+.toast{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-size:13px;color:var(--text);display:flex;align-items:center;gap:10px;box-shadow:0 4px 16px rgba(0,0,0,.4);animation:toast-in .15s ease}
+@keyframes toast-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 .load-spinner{width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
 .cloud-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:500;overflow-y:auto;padding:40px 20px}
@@ -168,10 +169,10 @@ tr:hover td{background:var(--surface2)}
     <input type="checkbox" id="enabled-only-cb"> Enabled only
   </label>
   <button class="btn btn-primary" onclick="openLoadModal()">+ Load .wpilog</button>
-  <input type="file" id="file-input" accept=".wpilog">
+  <input type="file" id="file-input" accept=".wpilog" multiple>
 </header>
 
-<div id="load-toast"><div class="load-spinner"></div><span>Fetching log…</span></div>
+<div id="toast-container"></div>
 
 <div class="cloud-modal-overlay" id="compare-modal">
   <div class="cloud-modal">
@@ -287,6 +288,7 @@ function parseWpilogName(filename) {
 let _currentFile = null; // holds the File object of the currently-viewed log
 
 async function cloudUpload(file, P) {
+  const toast = createToast(`Uploading ${file.name}…`);
   try {
     const sb = await getSupabase();
     if (!sb) throw new Error('Supabase not configured');
@@ -335,23 +337,33 @@ async function cloudUpload(file, P) {
     if (dbErr) throw dbErr;
 
     renderCloudHistory();
+    toast.dismiss();
   } catch (e) {
+    toast.dismiss();
     console.error('Cloud upload failed:', e);
   }
 }
 
+function createToast(msg) {
+  const el = document.createElement('div'); el.className = 'toast';
+  el.innerHTML = '<div class="load-spinner"></div><span></span>';
+  el.querySelector('span').textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  return { dismiss() { el.remove(); } };
+}
+
 async function loadFromCloud(filename) {
-  const toast = document.getElementById('load-toast');
-  toast.classList.add('show');
+  const toast = createToast('Fetching log…');
   try {
     const sb = await getSupabase();
     if (!sb) throw new Error('Supabase not configured');
     const { data, error } = await sb.storage.from('logs').download(filename);
     if (error) throw error;
     const buf = await data.arrayBuffer();
+    toast.dismiss();
     parseAndShow(new File([buf], filename, { type: 'application/octet-stream' }));
   } catch (e) {
-    toast.classList.remove('show');
+    toast.dismiss();
     alert('Failed to load from cloud: ' + e.message);
   }
 }
@@ -387,18 +399,18 @@ async function _renderCloudInto(list, status, onCardClick) {
     return da > db ? -1 : da < db ? 1 : 0;
   });
 
-  const matchOrder = { P: 0, Q: 1, E: 2 };
+  const matchOrder = { E: 0, Q: 1, P: 2 };
   for (const [key, items] of sortedGroups) {
     if (key === '__home__') {
       items.sort((a, b) => {
         const da = `${a.date || ''} ${a.time || ''}`.trim();
         const db = `${b.date || ''} ${b.time || ''}`.trim();
-        return da < db ? -1 : da > db ? 1 : 0;
+        return da < db ? 1 : da > db ? -1 : 0;
       });
     } else {
       items.sort((a, b) => {
         if (a.match_type !== b.match_type) return (matchOrder[a.match_type] ?? 9) - (matchOrder[b.match_type] ?? 9);
-        return (a.match_num ?? 0) - (b.match_num ?? 0);
+        return (b.match_num ?? 0) - (a.match_num ?? 0);
       });
     }
 
@@ -3751,7 +3763,6 @@ function parseAndShow(file) {
 
 function showDashboard(P, fileName, skipSave = false) {
   sessionStorage.setItem('dashboard_active', '1');
-  document.getElementById('load-toast').classList.remove('show');
   document.getElementById('hero').style.display = 'none';
   document.getElementById('enabled-only-label').style.display = 'flex';
   const dash = document.getElementById('dashboard');
@@ -3768,31 +3779,52 @@ function showUpload() {
   document.getElementById('dashboard').style.display = 'none';
 }
 
+async function uploadOnly(files) {
+  const wpifiles = files.filter(f => f.name.endsWith('.wpilog'));
+  await Promise.all(wpifiles.map(async file => {
+    let P;
+    try {
+      const buf = await file.arrayBuffer();
+      P = new WPILOGParser().parse(buf);
+    } catch (err) {
+      alert(`Failed to parse ${file.name}: ${err.message}`);
+      return;
+    }
+    await cloudUpload(file, P);
+  }));
+  renderCloudHistory();
+  renderRecentCompare();
+}
+
 // ================================================================
-// DRAG & DROP
+// DRAG & DROP — entire window is the drop target
 // ================================================================
 const dropzone = document.getElementById('dropzone');
 dropzone.addEventListener('click', () => document.getElementById('file-input').click());
-dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
-dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
-dropzone.addEventListener('drop', e => {
-  e.preventDefault(); dropzone.classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file) parseAndShow(file);
-});
 
 document.getElementById('file-input').addEventListener('change', e => {
-  const file = e.target.files[0];
-  if (file) { closeLoadModal(); parseAndShow(file); }
+  const files = [...e.target.files].filter(f => f.name.endsWith('.wpilog'));
+  if (files.length === 1) { closeLoadModal(); parseAndShow(files[0]); }
+  else if (files.length > 1) { closeLoadModal(); uploadOnly(files); }
   e.target.value = '';
 });
 
-// Drag on full page
-document.body.addEventListener('dragover', e => e.preventDefault());
-document.body.addEventListener('drop', e => {
+let _dragDepth = 0;
+document.addEventListener('dragenter', e => {
+  if (!e.dataTransfer.types.includes('Files')) return;
+  if (++_dragDepth === 1) dropzone.classList.add('drag-over');
+});
+document.addEventListener('dragleave', () => {
+  if (--_dragDepth === 0) dropzone.classList.remove('drag-over');
+});
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
   e.preventDefault();
-  const file = e.dataTransfer.files[0];
-  if (file && file.name.endsWith('.wpilog')) parseAndShow(file);
+  _dragDepth = 0;
+  dropzone.classList.remove('drag-over');
+  const files = [...e.dataTransfer.files].filter(f => f.name.endsWith('.wpilog'));
+  if (files.length === 1) parseAndShow(files[0]);
+  else if (files.length > 1) uploadOnly(files);
 });
 
 // ================================================================
@@ -3859,10 +3891,15 @@ if (SUPABASE_CONFIG) {
   rcSection.style.display = '';
   const rcBody = document.getElementById('recent-compare-body');
   const rcToggle = document.getElementById('btn-recent-compare-toggle');
+  const RC_KEY = 'tribecbot-recent-compare-hidden';
+  const rcHidden = localStorage.getItem(RC_KEY) === 'true';
+  rcBody.style.display = rcHidden ? 'none' : '';
+  rcToggle.textContent = rcHidden ? 'Show' : 'Hide';
   rcToggle.addEventListener('click', () => {
     const open = rcBody.style.display !== 'none';
     rcBody.style.display = open ? 'none' : '';
     rcToggle.textContent = open ? 'Show' : 'Hide';
+    localStorage.setItem(RC_KEY, open ? 'true' : 'false');
   });
 
   document.getElementById('btn-cloud-refresh')?.addEventListener('click', () => { renderCloudHistory(); renderRecentCompare(); });
