@@ -334,12 +334,10 @@ async function _renderCloudInto(list, status, onCardClick) {
     groups.get(key).push(d);
   }
 
-  // Sort groups: home first, then events by their earliest log date ascending
-  const sortedGroups = [...groups.entries()].sort(([ka, ia], [kb, ib]) => {
-    if (ka === '__home__') return -1;
-    if (kb === '__home__') return 1;
-    const da = ia.map(d => d.date || '').filter(Boolean).sort().pop() || '';
-    const db = ib.map(d => d.date || '').filter(Boolean).sort().pop() || '';
+  // Sort groups by newest log date descending so the most recent section appears first
+  const sortedGroups = [...groups.entries()].sort(([, ia], [, ib]) => {
+    const da = ia.map(d => `${d.date || ''} ${d.time || ''}`.trim()).filter(Boolean).sort().pop() || '';
+    const db = ib.map(d => `${d.date || ''} ${d.time || ''}`.trim()).filter(Boolean).sort().pop() || '';
     return da > db ? -1 : da < db ? 1 : 0;
   });
 
