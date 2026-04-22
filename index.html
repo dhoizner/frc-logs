@@ -1,0 +1,3044 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tribecbot Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f172a;--surface:#1e293b;--surface2:#263548;--border:#334155;
+  --text:#e2e8f0;--muted:#94a3b8;--accent:#3b82f6;--green:#22c55e;
+  --red:#ef4444;--yellow:#f59e0b;--orange:#f97316;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;font-size:14px}
+header{display:flex;align-items:center;gap:12px;padding:10px 20px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+header h1{font-size:16px;font-weight:700;color:var(--text)}
+header .badge{font-size:11px;padding:2px 7px;border-radius:9px;background:#0f4c81;color:#90c8f8;font-weight:600}
+.btn{padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px}
+.btn:hover{background:var(--border)}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-primary:hover{background:#2563eb}
+#btn-upload{margin-left:auto}
+main{padding:0}
+#hero{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:16px;text-align:center;padding:40px 20px}
+#hero h2{font-size:28px;font-weight:700}
+#hero p{color:var(--muted);max-width:500px}
+#dropzone{max-width:480px;margin:0 auto;border:2px dashed var(--border);border-radius:12px;padding:40px;text-align:center;cursor:pointer;transition:.2s}
+#dropzone:hover,#dropzone.drag-over{border-color:var(--accent);background:rgba(59,130,246,.06)}
+#dropzone svg{color:var(--muted);margin-bottom:12px}
+#dropzone p{color:var(--muted);font-size:13px}
+#dropzone strong{color:var(--text)}
+#file-input{display:none}
+#dashboard{display:none}
+#tabbar{display:flex;overflow-x:auto;background:var(--surface);border-bottom:1px solid var(--border);padding:0 12px;gap:2px}
+.tab-btn{padding:10px 16px;border:none;border-bottom:2px solid transparent;background:none;color:var(--muted);cursor:pointer;white-space:nowrap;font-size:13px;font-weight:500;transition:.15s}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+#panels{padding:16px 20px;width:100%}
+.tab-panel{display:block}.tab-panel.hidden{display:none}
+.subtab-bar{display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap}
+.subtab-btn{padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--muted);cursor:pointer;font-size:12px;transition:.15s}
+.subtab-btn:hover{color:var(--text);background:var(--surface2)}
+.subtab-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.subtab-panel.hidden{display:none}
+.section{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px}
+.section h3{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px}
+.section h4{font-size:12px;font-weight:600;color:var(--muted);margin:12px 0 8px}
+.chart-wrap{position:relative;margin-bottom:20px}
+.chart-wrap .reset-btn{position:absolute;top:4px;right:4px;padding:2px 8px;font-size:11px;z-index:10}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:var(--surface2);border-radius:8px;padding:12px 14px}
+.kpi .label{font-size:11px;color:var(--muted);margin-bottom:4px}
+.kpi .value{font-size:20px;font-weight:700;color:var(--text)}
+.kpi .unit{font-size:11px;color:var(--muted);margin-left:3px}
+.timeline{margin-bottom:20px}
+.timeline-row{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.timeline-label{min-width:160px;font-size:11px;color:var(--muted);text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.timeline-track{flex:1;height:20px;background:var(--surface2);border-radius:3px;position:relative;overflow:hidden}
+.timeline-seg{position:absolute;height:100%;border-radius:2px;transition:.05s}
+.timeline-seg:hover{opacity:.85}
+.disabled-overlay{position:absolute;top:0;height:100%;background:rgba(0,0,0,0.65);pointer-events:none;z-index:2}
+body.show-disabled .disabled-overlay{display:none}
+.timeline-axis{display:flex;justify-content:space-between;margin-left:168px;font-size:10px;color:var(--muted);margin-top:2px}
+.no-data{color:var(--muted);font-style:italic;font-size:13px;padding:16px 0}
+.info-box{background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.3);border-radius:6px;padding:10px 14px;font-size:12px;color:#90c8f8;margin-bottom:12px}
+.warn-box{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:10px 14px;font-size:12px;color:#fca5a5;margin-bottom:12px}
+.oob-list{margin-top:12px;max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:6px}
+.pose-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-variant-numeric:tabular-nums;background:#1e293b;border:1px solid #334155;color:#94a3b8;white-space:nowrap}
+.pose-pill .pill-label{color:#475569;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+.pose-pill.oob{background:#431407;border-color:#f97316;color:#f97316;font-weight:600}
+.oob-row{display:flex;align-items:center;gap:10px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;cursor:pointer}
+.oob-row:last-child{border-bottom:none}
+.oob-row:hover{background:#1e293b}
+.oob-row .oob-ts{color:#f97316;font-variant-numeric:tabular-nums;min-width:52px}
+.oob-row .oob-src{color:#94a3b8;min-width:120px}
+.oob-row .oob-pos{color:#64748b;flex:1}
+.oob-row .oob-jump{margin-left:auto;background:none;border:1px solid var(--border);color:#94a3b8;font-size:11px;padding:2px 7px;border-radius:4px;cursor:pointer}
+.oob-row .oob-jump:hover{border-color:var(--accent);color:var(--accent)}
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+.legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:6px 10px;text-align:left;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:600}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--surface2)}
+#field-canvas-wrap{position:relative}
+#field-canvas{display:block;width:100%;border-radius:6px;background:var(--surface2)}
+.field-controls{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.field-controls label{display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer}
+#time-slider{flex:1;min-width:200px}
+.overrun-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:9px;font-size:11px;font-weight:600}
+.overrun-chip.ok{background:rgba(34,197,94,.15);color:var(--green)}
+.overrun-chip.warn{background:rgba(239,68,68,.15);color:var(--red)}
+#history-section{margin-top:24px}
+#history-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:10px}
+.history-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;cursor:pointer;position:relative}
+.history-card:hover{border-color:var(--accent)}
+.history-card .hc-name{font-weight:600;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:22px}
+.history-card .hc-meta{color:var(--muted)}
+.hc-del{position:absolute;top:8px;right:8px;background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;border-radius:4px}
+.hc-del:hover{color:#ef4444;background:#1e293b}
+.history-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.history-header h3{font-size:13px;font-weight:700;color:#64748b;margin:0}
+.btn-clear-hist{background:none;border:1px solid var(--border);color:#64748b;font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer}
+.btn-clear-hist:hover{border-color:#ef4444;color:#ef4444}
+</style>
+</head>
+<body>
+<header>
+  <h1>Tribecbot Dashboard</h1>
+  <span class="badge">DogLog · 2026 Rebuilt</span>
+  <button class="btn btn-primary" id="btn-upload" onclick="document.getElementById('file-input').click()">+ Load .wpilog</button>
+  <input type="file" id="file-input" accept=".wpilog">
+</header>
+
+<main>
+  <div id="hero">
+    <h2>Tribecbot Log Dashboard</h2>
+    <p>Drop a <strong>.wpilog</strong> file from the Rio to analyze match telemetry — superstructure states, interpolation accuracy, vision quality, power budget, and more.</p>
+    <div id="dropzone">
+      <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5v-9m0 0-3.75 3.75M12 7.5l3.75 3.75M3 15.75v1.5A2.25 2.25 0 0 0 5.25 19.5h13.5A2.25 2.25 0 0 0 21 17.25v-1.5"/></svg>
+      <p><strong>Drag &amp; drop a .wpilog here</strong></p>
+      <p>or click to browse</p>
+    </div>
+    <div id="history-section">
+      <div id="history-list"></div>
+    </div>
+  </div>
+
+  <div id="dashboard">
+    <div id="tabbar"></div>
+    <div id="panels"></div>
+  </div>
+</main>
+
+<script>
+'use strict';
+
+// ================================================================
+// CONFIGURATION
+// ================================================================
+const FIREBASE_CONFIG = null; // Set to a Firebase config object to enable cloud sync
+
+// ================================================================
+// FIELD CONSTANTS (from Field.java, in meters)
+// ================================================================
+const FIELD = {
+  LENGTH_M: 16.5405,  // 651.2 in
+  WIDTH_M:  8.0518,   // 317.0 in
+  HUB_X:    4.6240,   // 182.11 in → m
+  HUB_Y:    4.0259,   // WIDTH / 2
+  HUB_RADIUS: 0.5296,
+  HUB_FAR_RIGHT: [5.2248, 4.0259 - 0.5969],  // 205.6 in, WIDTH/2 - 47/2 in
+  HUB_FAR_LEFT:  [5.2248, 4.0259 + 0.5969],
+  OPPONENT_ZONE_X: 12.5155,  // LENGTH - 158.6 in
+  BEHIND_HUB_VERTEX_X: 4.6240 + 3.6576,  // + 144 in
+  INNER_LEFT_FERRY:  [0.8001, 8.0518 - 0.8763 - 1.2192],
+  INNER_RIGHT_FERRY: [0.5271, 1.9304 + 1.2192],
+  OUTER_LEFT_FERRY:  [0.8001, 8.0518 - 0.8763 - 0.3048],
+  OUTER_RIGHT_FERRY: [0.8001, 1.9304 - 0.3048],
+  TOWER_FAR_CENTER:  [1.0668, 3.7456],
+  TOWER_BAR_DISP:    0.2890,
+};
+
+// ================================================================
+// SETTINGS (from Settings.java)
+// ================================================================
+const SETTINGS = {
+  shooter: { tol: 50, tolLow: 80, sotmTol: 100, fotmTol: 150, fotmTolLow: 250,
+             rpmKb: 2675, rpmCorner: 3650 },
+  hood:    { tolDeg: 0.5, sotmTolDeg: 2, stowDeg: 21, kbDeg: 20, cornerDeg: 39, ferryDeg: 44 },
+  turret:  { tolDeg: 2, fotmTolDeg: 10, sotmClose: 10, sotmFar: 6,
+             kbDeg: 0, leftCornerDeg: -233, rightCornerDeg: 53, maxDeg: 210, minDeg: -210 },
+  swerve:  { maxVel: 4.16, maxVelSotm: 1.75, brownout: 5.5 },
+  interpAngle: [[0.96,15],[1.22,20],[2.15,27],[3.38,34],[4.43,39],[5.66,39],[6.44,44]],
+  interpRpm:   [[0.96,2800],[1.22,2600],[2.15,2805],[3.38,3075],[4.43,3350],[5.66,3650],[6.44,3800]],
+  ferryRpm:    [[1,2000],[5.16,3300],[6.94,3400],[9.77,3600]],
+};
+
+// ================================================================
+// STATE COLORS
+// ================================================================
+const COLORS = {
+  superstructure: {
+    STOW:                   '#6b7280', // slate gray
+    INTERPOLATION:          '#22c55e', // green
+    AUTO_INTERPOLATION:     '#3b82f6', // blue
+    AUTO_INTERPOLATION_SOTM:'#fbbf24', // gold
+    SOTM:                   '#f97316', // orange
+    FOTM:                   '#ec4899', // hot pink
+    FERRY:                  '#8b5cf6', // violet
+    REVERSE:                '#ef4444', // red
+    KB:                     '#06b6d4', // cyan
+    LEFT_CORNER:            '#84cc16', // lime
+    RIGHT_CORNER:           '#14b8a6', // teal
+    MANUAL_OVERRIDE:        '#f59e0b', // amber
+  },
+  hood: {
+    STOW:'#6b7280', FERRY:'#8b5cf6', MANUAL_OVERRIDE:'#f59e0b', KB:'#06b6d4',
+    LEFT_CORNER:'#10b981', RIGHT_CORNER:'#14b8a6', INTERPOLATION:'#22c55e',
+    SOTM:'#f97316', FOTM:'#ec4899', ANALOG:'#a78bfa', HOMING_UPPER:'#fde047',
+    HOMING_LOWER:'#fcd34d', IDLE:'#374151',
+  },
+  turret: {
+    IDLE:'#374151', ZERO:'#6b7280', SCORE:'#22c55e', SOTM:'#f97316', FOTM:'#ec4899',
+    FERRY:'#8b5cf6', LEFT_CORNER:'#10b981', RIGHT_CORNER:'#14b8a6', KB:'#06b6d4',
+    TESTING:'#fbbf24',
+  },
+  shooter: {
+    STOP:'#374151', MANUAL_OVERRIDE:'#f59e0b', FERRY:'#8b5cf6', REVERSE:'#ef4444',
+    KB:'#06b6d4', LEFT_CORNER:'#10b981', RIGHT_CORNER:'#14b8a6',
+    INTERPOLATION:'#22c55e', SOTM:'#f97316', FOTM:'#ec4899',
+  },
+  pivotState: { DEPLOY:'#22c55e', HOMING:'#fcd34d', DIGEST:'#06b6d4', STOW:'#6b7280' },
+  rollerState: { INTAKE:'#22c55e', OUTTAKE:'#ef4444', STOP:'#374151' },
+  handoff:  { STOP:'#374151', FORWARD:'#22c55e', REVERSE:'#ef4444' },
+  spindexer:{ STOP:'#374151', FORWARD:'#22c55e', REVERSE:'#ef4444' },
+  leds:{
+    NONE:'#374151', DISABLED_ALLOWED:'#6b7280', DISABLED_DISALLOWED:'#ef4444',
+    UNDER_TRENCH:'#fcd34d', TURRET_WRAPPING:'#f97316', LEFT_CORNER:'#10b981',
+    RIGHT_CORNER:'#14b8a6', KITBOT:'#a78bfa', SOTM:'#f97316', FOTM:'#ec4899',
+    REVERSE:'#ef4444', INTAKE_STOW:'#6b7280', INTAKE_DEPLOYED:'#22c55e',
+  },
+};
+function sc(map, val){ return map[val] ?? '#94a3b8'; }
+
+function stateLegend(container, samples, colorMap) {
+  const seen = [...new Set(samples.map(s => s.val))];
+  if (!seen.length) return;
+  const leg = document.createElement('div'); leg.className = 'legend';
+  for (const state of seen) {
+    const color = sc(colorMap, state);
+    leg.innerHTML += `<div class="legend-item"><div class="legend-dot" style="background:${color}"></div>${state}</div>`;
+  }
+  container.appendChild(leg);
+}
+
+// ================================================================
+// WPILOG PARSER
+// ================================================================
+class WPILOGParser {
+  constructor() {
+    this._entries = new Map();
+    this._data    = new Map();
+    this._dec     = new TextDecoder();
+  }
+
+  parse(buffer) {
+    const view = new DataView(buffer);
+    const magic = this._str(view, 0, 6);
+    if (magic !== 'WPILOG') throw new Error('Not a WPILOG file');
+    const extraLen = view.getUint32(8, true);
+    let pos = 12 + extraLen;
+    while (pos < buffer.byteLength) {
+      const next = this._rec(view, buffer.byteLength, pos);
+      if (!next || next <= pos) break;
+      pos = next;
+    }
+    for (const arr of this._data.values()) arr.sort((a, b) => a.ts - b.ts);
+    return this;
+  }
+
+  _rec(view, end, pos) {
+    if (pos >= end) return null;
+    const bf = view.getUint8(pos++);
+    const eb = (bf & 3) + 1, lb = ((bf >> 2) & 3) + 1, tb = ((bf >> 4) & 3) + 1;
+    if (pos + eb + lb + tb > end) return null;
+    let eid  = 0; for (let i = 0; i < eb; i++) eid  |= view.getUint8(pos++) << (8*i);
+    let pLen = 0; for (let i = 0; i < lb; i++) pLen |= view.getUint8(pos++) << (8*i);
+    let ts   = 0; for (let i = 0; i < tb; i++) ts   += view.getUint8(pos++) * (256**i);
+    if (pos + pLen > end) return null;
+    const ps = pos; pos += pLen;
+    if (eid === 0) this._ctrl(view, ps, pLen);
+    else           this._data_rec(view, ps, pLen, eid, ts);
+    return pos;
+  }
+
+  _ctrl(view, s, len) {
+    if (len < 1 || view.getUint8(s) !== 0x00) return;
+    let p = s + 1;
+    const eid    = view.getUint32(p, true); p += 4;
+    const nameL  = view.getUint32(p, true); p += 4;
+    const rawName = this._str(view, p, nameL); p += nameL;
+    const name    = rawName.startsWith('/Robot/') ? rawName.slice(7) : rawName;
+    const typeL  = view.getUint32(p, true); p += 4;
+    const type   = this._str(view, p, typeL);
+    this._entries.set(eid, { name, type });
+    if (!this._data.has(name)) this._data.set(name, []);
+  }
+
+  _data_rec(view, s, len, eid, tsUs) {
+    const e = this._entries.get(eid);
+    if (!e) return;
+    const val = this._dec_val(view, s, len, e.type);
+    if (val === undefined) return;
+    this._data.get(e.name).push({ ts: tsUs / 1e6, val });
+  }
+
+  _dec_val(view, s, len, type) {
+    switch (type) {
+      case 'double':  return len >= 8 ? view.getFloat64(s, true) : undefined;
+      case 'float':   return len >= 4 ? view.getFloat32(s, true) : undefined;
+      case 'int64': {
+        if (len < 8) return undefined;
+        return view.getInt32(s+4,true)*0x100000000 + view.getUint32(s,true);
+      }
+      case 'boolean': return len >= 1 ? view.getUint8(s) !== 0 : undefined;
+      case 'string': case 'json': return this._str(view, s, len);
+      case 'double[]': { const a=[]; for(let i=0;i+8<=len;i+=8) a.push(view.getFloat64(s+i,true)); return a; }
+      case 'float[]':  { const a=[]; for(let i=0;i+4<=len;i+=4) a.push(view.getFloat32(s+i,true)); return a; }
+      case 'boolean[]':{ const a=[]; for(let i=0;i<len;i++) a.push(view.getUint8(s+i)!==0); return a; }
+      case 'int64[]':  { const a=[]; for(let i=0;i+8<=len;i+=8) a.push(view.getInt32(s+i+4,true)*0x100000000+view.getUint32(s+i,true)); return a; }
+      case 'string[]': {
+        const a=[]; let p=0;
+        while(p+4<=len){ const sl=view.getUint32(s+p,true); p+=4; if(p+sl>len) break; a.push(this._str(view,s+p,sl)); p+=sl; }
+        return a;
+      }
+      default:
+        if (type.startsWith('struct:')) return this._dec_struct(view, s, len, type);
+        return undefined;
+    }
+  }
+
+  _dec_struct(view, s, len, type) {
+    switch (type) {
+      case 'struct:Pose2d':
+        return len >= 24 ? { x: view.getFloat64(s,true), y: view.getFloat64(s+8,true), angle: view.getFloat64(s+16,true) } : undefined;
+      case 'struct:Translation2d':
+        return len >= 16 ? { x: view.getFloat64(s,true), y: view.getFloat64(s+8,true) } : undefined;
+      case 'struct:Rotation2d':
+        return len >= 8  ? { angle: view.getFloat64(s,true) } : undefined;
+      default: return undefined;
+    }
+  }
+
+  _str(view, s, len) {
+    return this._dec.decode(new Uint8Array(view.buffer, view.byteOffset + s, len));
+  }
+
+  get(name)   { return this._data.get(name) ?? []; }
+  match(regex){ const r=typeof regex==='string'?new RegExp(regex):regex, o={}; for(const[k,v]of this._data) if(r.test(k)) o[k]=v; return o; }
+  allKeys()   { return [...this._data.keys()].sort(); }
+}
+
+// ================================================================
+// UTILITIES
+// ================================================================
+function getTimeRange(P) {
+  let lo = Infinity, hi = -Infinity;
+  for (const s of P._data.values()) {
+    for (const { ts } of s) { if (ts < lo) lo = ts; if (ts > hi) hi = ts; }
+  }
+  return { minT: isFinite(lo) ? lo : 0, maxT: isFinite(hi) ? hi : 150 };
+}
+
+function getActiveTimeRange(P) {
+  // Trim to DS:enabled === true windows; fall back to global range.
+  const enabled = P.get('DS:enabled');
+  let lo = Infinity, hi = -Infinity;
+  for (const s of enabled) {
+    if (s.val) { if (s.ts < lo) lo = s.ts; if (s.ts > hi) hi = s.ts; }
+  }
+  if (isFinite(lo) && isFinite(hi)) {
+    return { minT: Math.max(0, lo - 1), maxT: hi + 1 };
+  }
+  return getTimeRange(P);
+}
+
+function downsample(arr, max = 2000) {
+  if (arr.length <= max) return arr;
+  const step = arr.length / max;
+  return arr.filter((_, i) => Math.floor(i % step) === 0);
+}
+
+function toXY(samples, yFn = s => s.val, max = 2000) {
+  return downsample(samples, max).map(s => ({ x: s.ts, y: yFn(s) }));
+}
+
+function toSegments(samples, endTime) {
+  const segs = [];
+  for (let i = 0; i < samples.length; i++) {
+    const end = i + 1 < samples.length ? samples[i+1].ts : (endTime ?? samples[i].ts + 0.1);
+    segs.push({ start: samples[i].ts, end, val: samples[i].val });
+  }
+  return segs;
+}
+
+function peakVal(samples) { let m=-Infinity; for(const s of samples) if(s.val>m) m=s.val; return isFinite(m)?m:null; }
+
+// Return only leaf keys from a supplyMap — exclude any key that is a parent of another key
+// (i.e., another key starts with this key + "/" or "-"), to avoid double-counting aggregates.
+function leafSeriesOnly(map) {
+  const keys = Object.keys(map);
+  const norm = k => k.replace(/\/$/, '');
+  const leaves = keys.filter(k => {
+    const kn = norm(k);
+    return !keys.some(other => {
+      if (other === k) return false;
+      const on = norm(other);
+      return on.startsWith(kn + '/') || on.startsWith(kn + '-');
+    });
+  });
+  return leaves.map(k => map[k]);
+}
+function minVal(samples)  { let m=Infinity; for(const s of samples) if(s.val<m) m=s.val; return isFinite(m)?m:null; }
+function lastVal(samples) { return samples.length ? samples[samples.length-1].val : null; }
+function avgVal(samples)  { if(!samples.length) return null; let s=0; for(const x of samples) s+=x.val; return s/samples.length; }
+
+function motorKpis(d, motors) {
+  const tiles = motors.flatMap(({ label, curr }) => [
+    { label: `${label} Peak (A)`, value: fmt(peakVal(curr), 1), unit: 'A' },
+    { label: `${label} Mean (A)`, value: fmt(avgVal(curr),  1), unit: 'A' },
+  ]).filter(t => t.value !== '—');
+  if (tiles.length) kpis(d, tiles);
+}
+
+function fmt(v, dec=2, unit='') {
+  if (v === null || v === undefined) return '—';
+  return v.toFixed(dec) + (unit ? '\u202f' + unit : '');
+}
+
+// ================================================================
+// CHART HELPERS
+// ================================================================
+const _charts = [];
+let _disabledIntervals = []; // computed per log, used by renderTimeline overlays
+
+const ZOOM_OPTS = {
+  zoom: { drag: { enabled: true }, wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, mode: 'x' },
+  pan:  { enabled: true, mode: 'x' },
+};
+
+// Tooltip tracks exact mouse position instead of snapping to nearest data point
+Chart.Tooltip.positioners.cursor = (_, eventPos) => eventPos;
+
+// Vertical crosshair drawn at exact mouse x on all line charts
+Chart.register({
+  id: 'crosshair',
+  afterEvent(chart, args) {
+    if (chart.config.type !== 'line') return;
+    const { event } = args;
+    if (event.type === 'mousemove') {
+      chart._crossX = event.x;
+      args.changed = true;
+    } else if (event.type === 'mouseout') {
+      chart._crossX = null;
+      args.changed = true;
+    }
+  },
+  afterDraw(chart) {
+    if (chart.config.type !== 'line') return;
+    const x = chart._crossX;
+    if (x == null || !chart.chartArea) return;
+    const { ctx, chartArea: { top, bottom, left, right } } = chart;
+    if (x < left || x > right) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, bottom);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(148,163,184,0.55)';
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.restore();
+  }
+});
+
+// Disabled-period shading drawn directly on canvas after datasets
+Chart.register({
+  id: 'disabledShading',
+  afterDatasetsDraw(chart) {
+    if (chart.config.type !== 'line') return;
+    if (document.body.classList.contains('show-disabled')) return;
+    const { ctx, chartArea, scales } = chart;
+    if (!chartArea || !scales.x) return;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    for (const [s, e] of _disabledIntervals) {
+      const x1 = Math.max(scales.x.getPixelForValue(s), chartArea.left);
+      const x2 = Math.min(scales.x.getPixelForValue(e), chartArea.right);
+      if (x2 > x1) ctx.fillRect(x1, chartArea.top, x2 - x1, chartArea.bottom - chartArea.top);
+    }
+    ctx.restore();
+  }
+});
+
+function lineDataset(label, data, color, opts = {}) {
+  return {
+    label, data, borderColor: color, backgroundColor: color + '22',
+    pointRadius: 0, borderWidth: 1.5, tension: 0,
+    ...opts
+  };
+}
+
+function boolDataset(label, samples, color) {
+  return lineDataset(label, toXY(samples, s => s.val ? 1 : 0), color, { stepped: 'before', fill: true });
+}
+
+function makeLineChart(container, datasets, yLabel = '', annotations = {}, height = 200) {
+  const wrap = document.createElement('div');
+  wrap.className = 'chart-wrap';
+  wrap.style.height = height + 'px';
+  const btn = document.createElement('button');
+  btn.className = 'btn reset-btn';
+  btn.textContent = 'Reset Zoom';
+  const canvas = document.createElement('canvas');
+  canvas.style.height = height + 'px';
+  wrap.appendChild(btn);
+  wrap.appendChild(canvas);
+  container.appendChild(wrap);
+
+  const chart = new Chart(canvas, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      animation: false, responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: datasets.length > 1, labels: { font: { size: 11 }, color: '#94a3b8' } },
+        zoom: ZOOM_OPTS,
+        annotation: { annotations },
+        tooltip: {
+          position: 'cursor',
+          callbacks: {
+            title(items) {
+              const chart = items[0]?.chart;
+              if (!chart) return '';
+              const t = chart._crossX != null
+                ? chart.scales.x.getValueForPixel(chart._crossX)
+                : items[0]?.parsed?.x;
+              return t != null ? `t = ${t.toFixed(2)} s` : '';
+            }
+          }
+        },
+      },
+      scales: {
+        x: { type: 'linear', title: { display: true, text: 'Time (s)', color: '#64748b', font: { size: 11 } },
+             ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(148,163,184,0.12)' } },
+        y: { title: { display: !!yLabel, text: yLabel, color: '#64748b', font: { size: 11 } },
+             ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(148,163,184,0.12)' } },
+      },
+    },
+  });
+
+  btn.onclick = () => chart.resetZoom();
+  _charts.push(chart);
+  return chart;
+}
+
+function makeScatterChart(container, datasets, xLabel = 'Duration (s)', yLabel = 'Current (A)', annotations = {}, xLog = false) {
+  const wrap = document.createElement('div'); wrap.className = 'chart-wrap'; wrap.style.height = '260px';
+  const btn = document.createElement('button'); btn.className = 'btn reset-btn'; btn.textContent = 'Reset Zoom';
+  const canvas = document.createElement('canvas'); canvas.style.height = '260px';
+  wrap.appendChild(btn); wrap.appendChild(canvas);
+  container.appendChild(wrap);
+
+  const chart = new Chart(canvas, {
+    type: 'scatter',
+    data: { datasets },
+    options: {
+      animation: false, responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, labels: { font: { size: 11 }, color: '#94a3b8' } },
+        annotation: { annotations },
+      },
+      scales: {
+        x: { type: xLog ? 'logarithmic' : 'linear', title: { display: true, text: xLabel, color: '#64748b', font: { size: 11 } },
+             ticks: { color: '#64748b' }, grid: { color: 'rgba(148,163,184,0.12)' } },
+        y: { title: { display: true, text: yLabel, color: '#64748b', font: { size: 11 } },
+             ticks: { color: '#64748b' }, grid: { color: 'rgba(148,163,184,0.12)' } },
+      },
+    },
+  });
+  btn.onclick = () => chart.resetZoom();
+  _charts.push(chart);
+  return chart;
+}
+
+function section(parent, title, fn) {
+  const d = document.createElement('div'); d.className = 'section';
+  const h = document.createElement('h3'); h.textContent = title; d.appendChild(h);
+  fn(d);
+  parent.appendChild(d);
+}
+
+function noData(el, msg = 'No data for this key in the log') {
+  const p = document.createElement('p'); p.className = 'no-data'; p.textContent = msg; el.appendChild(p);
+}
+
+function kpis(parent, tiles) {
+  const g = document.createElement('div'); g.className = 'kpi-grid';
+  for (const { label, value, unit } of tiles) {
+    const d = document.createElement('div'); d.className = 'kpi';
+    d.innerHTML = `<div class="label">${label}</div><div class="value">${value}${unit ? '<span class="unit">'+unit+'</span>' : ''}</div>`;
+    g.appendChild(d);
+  }
+  parent.appendChild(g);
+}
+
+// ================================================================
+// DISCRETE TIMELINE
+// ================================================================
+function renderTimeline(parent, rows, minT, maxT) {
+  const span = maxT - minT || 1;
+  const wrap = document.createElement('div'); wrap.className = 'timeline';
+  for (const row of rows) {
+    const el = document.createElement('div'); el.className = 'timeline-row';
+    const lbl = document.createElement('span'); lbl.className = 'timeline-label'; lbl.textContent = row.name; lbl.title = row.name;
+    el.appendChild(lbl);
+    const track = document.createElement('div'); track.className = 'timeline-track';
+    for (const seg of row.segments) {
+      const left = ((seg.start - minT) / span) * 100;
+      const width = Math.max(0.05, ((seg.end - seg.start) / span) * 100);
+      const s = document.createElement('div'); s.className = 'timeline-seg';
+      s.style.left = left + '%'; s.style.width = width + '%';
+      s.style.backgroundColor = row.colorFn ? row.colorFn(seg.val) : '#3b82f6';
+      s.title = `${seg.val}  ${seg.start.toFixed(2)}s – ${seg.end.toFixed(2)}s`;
+      track.appendChild(s);
+    }
+    // Disabled-period overlays (hidden when body has .show-disabled)
+    for (const [ds, de] of _disabledIntervals) {
+      const left  = ((ds - minT) / span) * 100;
+      const width = Math.max(0, ((de - ds) / span) * 100);
+      if (width < 0.01) continue;
+      const ov = document.createElement('div'); ov.className = 'disabled-overlay';
+      ov.style.left = left + '%'; ov.style.width = width + '%';
+      track.appendChild(ov);
+    }
+    el.appendChild(track); wrap.appendChild(el);
+  }
+  // x-axis
+  const axis = document.createElement('div'); axis.className = 'timeline-axis';
+  for (let i = 0; i <= 10; i++) {
+    const t = minT + (i / 10) * span;
+    const tk = document.createElement('span'); tk.textContent = t.toFixed(0) + 's'; axis.appendChild(tk);
+  }
+  wrap.appendChild(axis);
+  parent.appendChild(wrap);
+}
+
+// ================================================================
+// EXCURSION ANALYSIS & CB285 TRIP CURVE
+// ================================================================
+// CB285 trip curve: columns = [multiple-of-120A, lower-trip-s, upper-trip-s]
+const CB285 = [
+  [1.0, Infinity, Infinity],
+  [1.1, 60, 120],
+  [1.25, 10, 30],
+  [1.5, 3, 10],
+  [2.0, 1.0, 3.0],
+  [3.0, 0.2, 0.6],
+  [5.0, 0.05, 0.12],
+  [10.0, 0.008, 0.02],
+];
+const RATED_A = 120;
+
+function findExcursions(samples, thresholdA, mergeGapS = 0.5) {
+  const ex = [];
+  let start = null, peak = 0, sum = 0, count = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const { ts, val } = samples[i];
+    if (val >= thresholdA) {
+      if (start === null) { start = ts; peak = 0; sum = 0; count = 0; }
+      if (val > peak) peak = val;
+      sum += val; count++;
+      if (i + 1 >= samples.length || samples[i+1].val < thresholdA) {
+        const dur = ts - start;
+        if (ex.length && ex[ex.length-1].end + mergeGapS >= start) {
+          const prev = ex[ex.length-1];
+          prev.end = ts; prev.dur = prev.end - prev.start;
+          if (peak > prev.peak) prev.peak = peak;
+          prev._sum += sum; prev._count += count;
+          prev.mean = prev._sum / prev._count;
+        } else {
+          ex.push({ start, end: ts, dur, peak, mean: sum / count, _sum: sum, _count: count });
+        }
+        start = null;
+      }
+    }
+  }
+  return ex;
+}
+
+function tripCurveAnnotations() {
+  const lower = CB285.filter(r => isFinite(r[1])).map(r => ({ x: r[1], y: r[0] * RATED_A }));
+  const upper = CB285.filter(r => isFinite(r[2])).map(r => ({ x: r[2], y: r[0] * RATED_A }));
+  return { lower, upper };
+}
+
+// ================================================================
+// HELPER: reference line annotation
+// ================================================================
+function hLine(yVal, label, color = '#6b7280', dash = [4,4]) {
+  return { type: 'line', yMin: yVal, yMax: yVal, borderColor: color, borderWidth: 1,
+           borderDash: dash, label: { content: label, display: true, position: 'end',
+           color, font: { size: 10 }, backgroundColor: 'transparent' } };
+}
+function vLine(xVal, label, color = '#6b7280') {
+  return { type: 'line', xMin: xVal, xMax: xVal, borderColor: color, borderWidth: 1,
+           borderDash: [3,3], label: { content: label, display: true, color, font: { size: 10 }, backgroundColor: 'transparent' } };
+}
+
+// ================================================================
+// TAB 1: OVERVIEW
+// ================================================================
+function renderOverview(panel, P, minT, maxT) {
+  const stateS     = P.get('Superstructure/State');
+  const readyS        = P.get('Superstructure/Is Ready To Shoot?');
+  const shouldStopS   = P.get('Superstructure/Should Stop?');
+  const shooterAtTolS = P.get('Superstructure/Shooter At Tolerance?');
+  const hoodAtTolS    = P.get('Superstructure/Hood At Tolerance?');
+  const battV      = P.get('Robot/Battery Voltage');
+  const matchTime  = P.get('Robot/Match Time');
+  const energyWh   = P.get('EnergyUtil/Total Used Energy Watt Hours');
+  const totalCurr  = P.get('EnergyUtil/Total current Current');
+  const shooterErr = P.get('Superstructure/Shooter/Implemented Error (RPM)');
+  const turretErr  = P.get('Superstructure/Turret/Closed Loop Error (deg)');
+  const velX       = P.get('Swerve/Velocity Field Relative X (m per s)');
+  const velY       = P.get('Swerve/Velocity Field Relative Y (m per s)');
+  const poseSamples= P.get('Swerve/Pose');
+
+  // Derived: peak velocity magnitude
+  let peakVel = null;
+  if (velX.length && velY.length) {
+    const velXMap = new Map(velX.map(s => [s.ts.toFixed(3), s.val]));
+    let pk = 0;
+    for (const { ts, val } of velY) {
+      const x = velXMap.get(ts.toFixed(3)) ?? 0;
+      const mag = Math.sqrt(x * x + val * val);
+      if (mag > pk) pk = mag;
+    }
+    peakVel = pk;
+  }
+
+  // Loop overruns from pose timestamps
+  let overrunCount = 0;
+  if (poseSamples.length > 1) {
+    for (let i = 1; i < poseSamples.length; i++) {
+      if (poseSamples[i].ts - poseSamples[i-1].ts > 0.035) overrunCount++;
+    }
+  }
+
+  // Time enabled from DS:enabled boolean
+  const enabledS = P.get('DS:enabled');
+  let timeEnabled = null;
+  if (enabledS.length > 1) {
+    let acc = 0;
+    for (let i = 0; i < enabledS.length - 1; i++) {
+      if (enabledS[i].val) acc += enabledS[i+1].ts - enabledS[i].ts;
+    }
+    timeEnabled = acc;
+  }
+
+  const robotTotalCurr = P.get('Robot/Total Current Draw');
+  const peakInstCurrent = peakVal(robotTotalCurr);
+
+  // % of SOTM / FOTM time where shouldStop is false (clipToState is hoisted)
+  function pctNotStopped(targetState) {
+    const clipped = clipToState(shouldStopS, targetState);
+    if (!clipped.length) return null;
+    let totalTime = 0, freeTime = 0;
+    for (let i = 0; i < clipped.length - 1; i++) {
+      const dt = clipped[i+1].ts - clipped[i].ts;
+      totalTime += dt;
+      if (!clipped[i].val) freeTime += dt;
+    }
+    return totalTime > 0 ? (freeTime / totalTime * 100) : null;
+  }
+  const sotmFreePct = pctNotStopped('SOTM');
+  const fotmFreePct = pctNotStopped('FOTM');
+
+  section(panel, 'Match Summary', d => {
+    kpis(d, [
+      { label: 'Starting Battery V',  value: fmt(battV.length ? battV[0].val : null, 2), unit: 'V' },
+      { label: 'Min Battery Voltage', value: fmt(minVal(battV), 1), unit: 'V' },
+      { label: 'Total Energy Used',   value: fmt(lastVal(energyWh), 2), unit: 'Wh' },
+      { label: 'Peak Total Current',  value: fmt(peakInstCurrent, 0), unit: 'A' },
+      { label: 'Peak Swerve Speed',   value: fmt(peakVel, 2), unit: 'm/s' },
+      { label: 'Peak Shooter Error',  value: fmt(peakVal(shooterErr?.map ? shooterErr : []), 0), unit: 'RPM' },
+      { label: 'Peak Turret Error',   value: fmt(peakVal(turretErr), 1), unit: '°' },
+      { label: 'Loop Overruns',
+        value: `<span class="overrun-chip ${overrunCount < 5 ? 'ok':'warn'}">${overrunCount}</span>`,
+        unit: '' },
+      { label: 'Log Duration',        value: fmt(maxT - minT, 1), unit: 's' },
+      { label: 'Time Enabled',        value: fmt(timeEnabled, 1), unit: 's' },
+      { label: 'SOTM Free %',         value: fmt(sotmFreePct, 1), unit: '%' },
+      { label: 'FOTM Free %',         value: fmt(fotmFreePct, 1), unit: '%' },
+    ]);
+  });
+
+  section(panel, 'Superstructure State Timeline', d => {
+    if (!stateS.length) return noData(d);
+    stateLegend(d, stateS, COLORS.superstructure);
+    renderTimeline(d, [{
+      name: 'Superstructure',
+      segments: toSegments(stateS),
+      colorFn: v => sc(COLORS.superstructure, v),
+    }], minT, maxT);
+  });
+
+  // Clip boolean samples to targetState intervals, injecting boundary samples so every
+  // interval always produces at least a grey bar even when the underlying key wasn't logged.
+  function clipToState(samples, targetState) {
+    if (!stateS.length) return samples;
+    // Build targetState intervals from stateS (sorted, sparse step-changes)
+    const intervals = [];
+    for (let i = 0; i < stateS.length; i++) {
+      if (stateS[i].val === targetState) {
+        intervals.push({
+          start: stateS[i].ts,
+          end: i + 1 < stateS.length ? stateS[i+1].ts : maxT,
+        });
+      }
+    }
+    if (!intervals.length) return [];
+    const out = [];
+    let si = 0; // advancing pointer into samples (both arrays are time-sorted)
+    for (const { start, end } of intervals) {
+      while (si < samples.length && samples[si].ts < start) si++;
+      // carry last known value into this interval
+      const valBefore = si > 0 ? samples[si - 1].val : false;
+      out.push({ ts: start, val: valBefore });
+      // add actual samples within [start, end)
+      while (si < samples.length && samples[si].ts < end) { out.push(samples[si]); si++; }
+      // cap with false so the last segment doesn't bleed into the next interval
+      if (out[out.length - 1].ts < end - 0.01) out.push({ ts: end, val: false });
+    }
+    return out;
+  }
+
+  section(panel, 'Shooting Readiness (SOTM)', d => {
+    const rows = [
+      { name: 'Should Stop?',          samples: clipToState(shouldStopS,      'SOTM'), color: '#ef4444' },
+      { name: 'Is Ready To Shoot?',    samples: clipToState(readyS,           'SOTM'), color: '#22c55e' },
+      { name: 'Shooter At Tolerance?', samples: clipToState(shooterAtTolS,    'SOTM'), color: '#60a5fa' },
+      { name: 'Hood At Tolerance?',    samples: clipToState(hoodAtTolS,       'SOTM'), color: '#a78bfa' },
+      { name: 'Turret Lagging SOTM',   samples: clipToState(P.get('Spindexer/Should Stop/Turret Lagging SOTM'), 'SOTM'), color: '#f97316' },
+      { name: 'Is Turret Wrapping?',   samples: clipToState(P.get('Spindexer/Should Stop/Is Turret Wrapping?'),  'SOTM'), color: '#f97316' },
+      { name: 'Is Under Trench?',      samples: clipToState(P.get('Spindexer/Should Stop/Is Under Trench?'),     'SOTM'), color: '#f97316' },
+    ];
+    const allRows = rows.filter(r => r.samples.length).map(r => ({
+      name: r.name, segments: toSegments(r.samples), colorFn: v => v ? r.color : '#374151',
+    }));
+    if (!allRows.length) return noData(d);
+    renderTimeline(d, allRows, minT, maxT);
+  });
+
+  section(panel, 'Ferry Readiness (FOTM)', d => {
+    const rows = [
+      { name: 'Should Stop?',                  samples: clipToState(shouldStopS, 'FOTM'), color: '#ef4444' },
+      { name: 'Is Behind Hub While Ferrying?', samples: clipToState(P.get('Spindexer/Should Stop/Is Behind Hub While Ferrying?'), 'FOTM'), color: '#f97316' },
+      { name: 'Is Outside Alliance Zone?',     samples: clipToState(P.get('Spindexer/Should Stop/Is Outside Alliance Zone?'),     'FOTM'), color: '#f97316' },
+      { name: 'Is Under Trench?',              samples: clipToState(P.get('Spindexer/Should Stop/Is Under Trench?'),              'FOTM'), color: '#f97316' },
+      { name: 'Is Turret Wrapping?',           samples: clipToState(P.get('Spindexer/Should Stop/Is Turret Wrapping?'),           'FOTM'), color: '#f97316' },
+    ];
+    const allRows = rows.filter(r => r.samples.length).map(r => ({
+      name: r.name, segments: toSegments(r.samples), colorFn: v => v ? r.color : '#374151',
+    }));
+    if (!allRows.length) return noData(d);
+    renderTimeline(d, allRows, minT, maxT);
+  });
+
+  section(panel, 'FMS & Match Time', d => {
+    const isShift = P.get('FMSUtil/is active shift');
+    const timeLeft = P.get('FMSUtil/time left in shift');
+    if (!matchTime.length && !timeLeft.length && !isShift.length) return noData(d);
+    if (matchTime.length) makeLineChart(d, [lineDataset('Match Time (s)', toXY(matchTime), '#3b82f6')], 'Match Time (s)');
+    if (timeLeft.length)  makeLineChart(d, [lineDataset('Time Left in Shift (s)', toXY(timeLeft), '#f97316')], 'Shift Time Left (s)');
+    if (isShift.length) {
+      renderTimeline(d, [{ name: 'Active Shift', segments: toSegments(isShift), colorFn: v => v ? '#f59e0b' : '#374151' }], minT, maxT);
+    }
+  });
+
+  section(panel, 'Battery Voltage', d => {
+    if (!battV.length) return noData(d);
+    makeLineChart(d, [lineDataset('Voltage (V)', toXY(battV), '#22c55e')], 'Volts',
+      { brownout: hLine(5.5, '5.5 V brownout', '#ef4444') });
+  });
+}
+
+// ================================================================
+// TAB 2: SUPERSTRUCTURE
+// ================================================================
+function renderSuperstructure(panel, P, minT, maxT) {
+  function renderHood(d) {
+    const state   = P.get('Superstructure/Hood/State');
+    const target  = P.get('Superstructure/Hood/Target Angle (deg)');
+    const current = P.get('Superstructure/Hood/Current Angle (deg)');
+    const clErr   = P.get('Superstructure/Hood/Closed Loop Error (deg)');
+    const voltage = P.get('Superstructure/Hood/Applied Voltage (amps)');
+    const stall   = P.get('Superstructure/Hood/is stalling');
+    const homedUp = P.get('Superstructure/Hood/SUCCESFULLY HOMED UPPER');
+    const homedLo = P.get('Superstructure/Hood/SUCCESFULLY HOMED LOWER');
+    const supply  = P.get('Superstructure/Hood/Supply Current (amps)');
+    const stator  = P.get('Superstructure/Hood/Stator Current (amps)');
+
+    motorKpis(d, [{ label: 'Hood Supply', curr: supply }, { label: 'Hood Stator', curr: stator }]);
+
+    if (clErr.length) {
+      section(d, 'Closed-Loop Error', s => {
+        makeLineChart(s, [lineDataset('Error (°)', toXY(clErr), '#f59e0b')], 'Degrees',
+          { tolHi: hLine(SETTINGS.hood.tolDeg, '+tol', '#64748b'), tolLo: hLine(-SETTINGS.hood.tolDeg, '-tol', '#64748b') });
+      });
+    }
+
+    if (state.length) {
+      section(d, 'Hood State', s => {
+        stateLegend(s, state, COLORS.hood);
+        renderTimeline(s, [{ name: 'HoodState', segments: toSegments(state), colorFn: v => sc(COLORS.hood, v) }], minT, maxT);
+      });
+    }
+
+    if (target.length || current.length) {
+      section(d, 'Hood Angle', s => {
+        const datasets = [];
+        const anns = {
+          stow: hLine(SETTINGS.hood.stowDeg, 'STOW', '#6b7280'),
+          kb:   hLine(SETTINGS.hood.kbDeg,   'KB',   '#06b6d4'),
+          corn: hLine(SETTINGS.hood.cornerDeg,'CORNER','#10b981'),
+          ferry:hLine(SETTINGS.hood.ferryDeg, 'FERRY', '#8b5cf6'),
+        };
+        if (target.length)  datasets.push(lineDataset('Target (°)', toXY(target), '#f97316', { borderDash: [4,3] }));
+        if (current.length) datasets.push(lineDataset('Current (°)', toXY(current), '#22c55e'));
+        makeLineChart(s, datasets, 'Degrees', anns);
+      });
+    }
+
+    if (supply.length || stator.length || voltage.length) {
+      section(d, 'Current & Voltage', s => {
+        const ds = [];
+        if (supply.length)  ds.push(lineDataset('Supply Current (A)',  toXY(supply),  '#3b82f6'));
+        if (stator.length)  ds.push(lineDataset('Stator Current (A)',  toXY(stator),  '#06b6d4'));
+        if (voltage.length) ds.push(lineDataset('Voltage (V) [key mislabeled as amps]', toXY(voltage), '#f97316'));
+        makeLineChart(s, ds, '');
+      });
+    }
+  }
+
+  function renderShooter(d) {
+    const state      = P.get('Superstructure/Shooter/State');
+    const targetRpm  = P.get('Superstructure/Shooter/Target RPM');
+    const leaderRpm  = P.get('Superstructure/Shooter/Leader RPM');
+    const follRpm    = P.get('Superstructure/Shooter/Follower RPM');
+    const implErr    = P.get('Superstructure/Shooter/Implemented Error (RPM)');
+    const lSupply    = P.get('Superstructure/Shooter/Leader Supply Current (amps)');
+    const lStator    = P.get('Superstructure/Shooter/Leader Stator Current (amps)');
+    const fSupply    = P.get('Superstructure/Shooter/Follower Supply Current (amps)');
+    const fStator    = P.get('Superstructure/Shooter/Follower Stator Current (amps)');
+    const lVolt      = P.get('Superstructure/Shooter/Leader Voltage (volts)');
+    const fVolt      = P.get('Superstructure/Shooter/Follower Voltage (volts)');
+    const lTemp      = P.get('Superstructure/Shooter/Leader Motor Temp (C)');
+    const fTemp      = P.get('Superstructure/Shooter/Follower Motor Temp (C)');
+
+    motorKpis(d, [
+      { label: 'Leader Supply',   curr: lSupply },
+      { label: 'Leader Stator',   curr: lStator },
+      { label: 'Follower Supply', curr: fSupply },
+      { label: 'Follower Stator', curr: fStator },
+    ]);
+
+    if (implErr.length) {
+      section(d, 'RPM Error', s => {
+        makeLineChart(s, [lineDataset('Implemented Error (RPM)', toXY(implErr), '#f59e0b')], 'RPM', {
+          tolHi:  hLine( SETTINGS.shooter.tol,    '+50 RPM tol',      '#22c55e'),
+          tolLo:  hLine(-SETTINGS.shooter.tol,    '-50 RPM tol',      '#22c55e'),
+          tolHiL: hLine( SETTINGS.shooter.tolLow, '+80 RPM tol (low)','#64748b'),
+          tolLoL: hLine(-SETTINGS.shooter.tolLow, '-80 RPM tol (low)','#64748b'),
+        });
+      });
+    }
+
+    if (state.length) {
+      section(d, 'Shooter State', s => {
+        stateLegend(s, state, COLORS.shooter);
+        renderTimeline(s, [{ name: 'ShooterState', segments: toSegments(state), colorFn: v => sc(COLORS.shooter, v) }], minT, maxT);
+      });
+    }
+
+    if (targetRpm.length || leaderRpm.length || follRpm.length) {
+      section(d, 'RPM', s => {
+        const ds = [];
+        const anns = {
+          kb:     hLine(SETTINGS.shooter.rpmKb,     'KB',     '#06b6d4'),
+          corner: hLine(SETTINGS.shooter.rpmCorner,  'CORNER', '#10b981'),
+        };
+        if (targetRpm.length) ds.push(lineDataset('Target RPM',    toXY(targetRpm), '#f97316', { borderDash:[4,3] }));
+        if (leaderRpm.length) ds.push(lineDataset('Leader RPM',    toXY(leaderRpm), '#22c55e'));
+        if (follRpm.length)   ds.push(lineDataset('Follower RPM',  toXY(follRpm),   '#4ade80'));
+        makeLineChart(s, ds, 'RPM', anns);
+      });
+    }
+
+    if (lSupply.length || lStator.length || fSupply.length || fStator.length) {
+      section(d, 'Motor Currents (DEBUG)', s => {
+        const ds = [];
+        if (lSupply.length) ds.push(lineDataset('Leader Supply (A)',   toXY(lSupply), '#3b82f6'));
+        if (lStator.length) ds.push(lineDataset('Leader Stator (A)',   toXY(lStator), '#06b6d4'));
+        if (fSupply.length) ds.push(lineDataset('Follower Supply (A)', toXY(fSupply), '#f97316'));
+        if (fStator.length) ds.push(lineDataset('Follower Stator (A)', toXY(fStator), '#fb923c'));
+        makeLineChart(s, ds, 'Amps');
+      });
+    }
+
+    if (lVolt.length || fVolt.length) {
+      section(d, 'Motor Voltages (DEBUG)', s => {
+        const ds = [];
+        if (lVolt.length) ds.push(lineDataset('Leader Voltage (V)',   toXY(lVolt), '#3b82f6'));
+        if (fVolt.length) ds.push(lineDataset('Follower Voltage (V)', toXY(fVolt), '#f97316'));
+        makeLineChart(s, ds, 'Volts');
+      });
+    }
+
+    if (lTemp.length || fTemp.length) {
+      section(d, 'Motor Temperatures (DEBUG)', s => {
+        const ds = [];
+        if (lTemp.length) ds.push(lineDataset('Leader Temp (°C)',   toXY(lTemp), '#f97316'));
+        if (fTemp.length) ds.push(lineDataset('Follower Temp (°C)', toXY(fTemp), '#ec4899'));
+        makeLineChart(s, ds, '°C');
+      });
+    }
+  }
+
+  function renderTurret(d) {
+    const state   = P.get('Superstructure/Turret/State');
+    const target  = P.get('Superstructure/Turret/Target Angle');
+    const current = P.get('Superstructure/Turret/Current Angle');
+    const wrapped = P.get('Superstructure/Turret/Wrapped Target Angle (deg)');
+    const clErr   = P.get('Superstructure/Turret/Closed Loop Error (deg)');
+    const dist    = P.get('Superstructure/Turret/Dist From Hub');
+    const enc18   = P.get('Superstructure/Turret/Encoder18t Abs Position (Rot)');
+    const enc17   = P.get('Superstructure/Turret/Encoder17t Abs Position (Rot)');
+    const voltage = P.get('Superstructure/Turret/Voltage (volts)');
+    const supCurr = P.get('Superstructure/Turret/Supply Current (amps)');
+    const staCurr = P.get('Superstructure/Turret/Stator Current (amps)');
+
+    motorKpis(d, [{ label: 'Turret Supply', curr: supCurr }, { label: 'Turret Stator', curr: staCurr }]);
+
+    if (clErr.length) {
+      section(d, 'Closed-Loop Error', s => {
+        makeLineChart(s, [lineDataset('Error (°)', toXY(clErr), '#f59e0b')], 'Degrees', {
+          tolHi: hLine( SETTINGS.turret.tolDeg, `+${SETTINGS.turret.tolDeg}° tol`, '#22c55e'),
+          tolLo: hLine(-SETTINGS.turret.tolDeg, `-${SETTINGS.turret.tolDeg}° tol`, '#22c55e'),
+          fotm:  hLine( SETTINGS.turret.fotmTolDeg, `+${SETTINGS.turret.fotmTolDeg}° FOTM tol`, '#8b5cf6', [2,4]),
+          fotmN: hLine(-SETTINGS.turret.fotmTolDeg, `-${SETTINGS.turret.fotmTolDeg}° FOTM tol`, '#8b5cf6', [2,4]),
+        });
+      });
+    }
+
+    if (state.length) {
+      section(d, 'Turret State', s => {
+        stateLegend(s, state, COLORS.turret);
+        renderTimeline(s, [{ name: 'TurretState', segments: toSegments(state), colorFn: v => sc(COLORS.turret, v) }], minT, maxT);
+      });
+    }
+
+    if (target.length || current.length) {
+      section(d, 'Turret Angle', s => {
+        const ds = [];
+        const anns = {
+          kb: hLine(SETTINGS.turret.kbDeg, 'KB 0°', '#06b6d4'),
+          lc: hLine(SETTINGS.turret.leftCornerDeg, 'L_CORNER −233°', '#10b981'),
+          rc: hLine(SETTINGS.turret.rightCornerDeg, 'R_CORNER +53°', '#14b8a6'),
+          maxL: hLine(SETTINGS.turret.maxDeg, 'Soft Max +210°', '#ef4444', [2,4]),
+          minL: hLine(SETTINGS.turret.minDeg, 'Soft Min −210°', '#ef4444', [2,4]),
+        };
+        if (target.length)  ds.push(lineDataset('Target (°)', toXY(target), '#f97316', { borderDash:[4,3] }));
+        if (wrapped.length) ds.push(lineDataset('Wrapped Target (°)', toXY(wrapped), '#fcd34d', { borderDash:[2,3] }));
+        if (current.length) ds.push(lineDataset('Current (°)', toXY(current), '#22c55e'));
+        makeLineChart(s, ds, 'Degrees', anns);
+      });
+    }
+
+    if (dist.length) {
+      section(d, 'Distance From Hub', s => {
+        makeLineChart(s, [lineDataset('Dist (m)', toXY(dist), '#3b82f6')], 'Meters',
+          { sotmThresh: hLine(1.75, 'SOTM threshold', '#f97316') });
+      });
+    }
+
+    if (enc18.length || enc17.length) {
+      section(d, 'Absolute Encoder Positions (DEBUG)', s => {
+        const ds = [];
+        if (enc18.length) ds.push(lineDataset('18t Abs (rot)', toXY(enc18), '#3b82f6'));
+        if (enc17.length) ds.push(lineDataset('17t Abs (rot)', toXY(enc17), '#f97316'));
+        makeLineChart(s, ds, 'Rotations');
+      });
+    }
+
+    if (supCurr.length || staCurr.length || voltage.length) {
+      section(d, 'Motor Current & Voltage (DEBUG)', s => {
+        const ds = [];
+        if (supCurr.length) ds.push(lineDataset('Supply Current (A)', toXY(supCurr), '#3b82f6'));
+        if (staCurr.length) ds.push(lineDataset('Stator Current (A)', toXY(staCurr), '#06b6d4'));
+        if (voltage.length) ds.push(lineDataset('Voltage (V)',        toXY(voltage),  '#f97316'));
+        makeLineChart(s, ds, '');
+      });
+    }
+
+    const sotm = P.get('Superstructure/SOTM Stopped Timer');
+    const fotm = P.get('Superstructure/FOTM Stopped Timer');
+    if (sotm.length || fotm.length) {
+      section(d, 'SOTM / FOTM Stopped Timers', s => {
+        const ds = [];
+        if (sotm.length) ds.push(lineDataset('SOTM Stopped Timer (s)', toXY(sotm), '#f97316'));
+        if (fotm.length) ds.push(lineDataset('FOTM Stopped Timer (s)', toXY(fotm), '#ec4899'));
+        makeLineChart(s, ds, 'Seconds');
+      });
+    }
+  }
+
+  function renderInterp(d) {
+    const wrap = document.createElement('div'); wrap.style.display = 'flex'; wrap.style.gap = '20px'; wrap.style.flexWrap = 'wrap';
+    function makeTableEl(title, rows, heads) {
+      const div = document.createElement('div');
+      div.innerHTML = `<h4>${title}</h4><table><thead><tr>${heads.map(h=>'<th>'+h+'</th>').join('')}</tr></thead><tbody>
+        ${rows.map(r=>'<tr>'+r.map(v=>'<td>'+v+'</td>').join('')+'</tr>').join('')}</tbody></table>`;
+      wrap.appendChild(div);
+    }
+    makeTableEl('Distance → Hood Angle', SETTINGS.interpAngle.map(([d,a]) => [d.toFixed(2)+' m', a+'°']), ['Dist', 'Angle']);
+    makeTableEl('Distance → Shooter RPM', SETTINGS.interpRpm.map(([d,r]) => [d.toFixed(2)+' m', r+' RPM']), ['Dist', 'RPM']);
+    makeTableEl('Ferry RPM', SETTINGS.ferryRpm.map(([d,r]) => [d.toFixed(2)+' m', r+' RPM']), ['Dist', 'RPM']);
+    d.appendChild(wrap);
+  }
+
+  function renderSuperOverview(d) {
+    const stateS  = P.get('Superstructure/State');
+    const hoodErr = P.get('Superstructure/Hood/Closed Loop Error (deg)');
+    const shotErr = P.get('Superstructure/Shooter/Implemented Error (RPM)');
+    const turrErr = P.get('Superstructure/Turret/Closed Loop Error (deg)');
+
+    if (stateS.length) {
+      section(d, 'Superstructure State', s => {
+        stateLegend(s, stateS, COLORS.superstructure);
+        renderTimeline(s, [{ name: 'Superstructure', segments: toSegments(stateS), colorFn: v => sc(COLORS.superstructure, v) }], minT, maxT);
+      });
+    }
+
+    if (hoodErr.length) {
+      section(d, 'Hood Closed-Loop Error', s => {
+        makeLineChart(s, [lineDataset('Error (°)', toXY(hoodErr), '#f59e0b')], 'Degrees',
+          { tolHi: hLine(SETTINGS.hood.tolDeg, '+tol', '#64748b'), tolLo: hLine(-SETTINGS.hood.tolDeg, '-tol', '#64748b') });
+      });
+    }
+
+    if (shotErr.length) {
+      section(d, 'Shooter RPM Error', s => {
+        makeLineChart(s, [lineDataset('Implemented Error (RPM)', toXY(shotErr), '#f59e0b')], 'RPM', {
+          tolHi:  hLine( SETTINGS.shooter.tol,    '+50 RPM tol',       '#22c55e'),
+          tolLo:  hLine(-SETTINGS.shooter.tol,    '-50 RPM tol',       '#22c55e'),
+          tolHiL: hLine( SETTINGS.shooter.tolLow, '+80 RPM tol (low)', '#64748b'),
+          tolLoL: hLine(-SETTINGS.shooter.tolLow, '-80 RPM tol (low)', '#64748b'),
+        });
+      });
+    }
+
+    if (turrErr.length) {
+      section(d, 'Turret Closed-Loop Error', s => {
+        makeLineChart(s, [lineDataset('Error (°)', toXY(turrErr), '#f59e0b')], 'Degrees', {
+          tolHi: hLine( SETTINGS.turret.tolDeg,     `+${SETTINGS.turret.tolDeg}° tol`,     '#22c55e'),
+          tolLo: hLine(-SETTINGS.turret.tolDeg,     `-${SETTINGS.turret.tolDeg}° tol`,     '#22c55e'),
+          fotm:  hLine( SETTINGS.turret.fotmTolDeg, `+${SETTINGS.turret.fotmTolDeg}° FOTM tol`, '#8b5cf6', [2,4]),
+          fotmN: hLine(-SETTINGS.turret.fotmTolDeg, `-${SETTINGS.turret.fotmTolDeg}° FOTM tol`, '#8b5cf6', [2,4]),
+        });
+      });
+    }
+  }
+
+  createSubtabs(panel, [
+    { label: 'Overview',       render: renderSuperOverview },
+    { label: 'Hood',           render: renderHood },
+    { label: 'Shooter',        render: renderShooter },
+    { label: 'Turret',         render: renderTurret },
+    { label: 'Interpolation',  render: renderInterp },
+  ]);
+}
+
+// ================================================================
+// TAB 3: FIELD
+// ================================================================
+function renderField(panel, P, minT, maxT) {
+  const FIELD_IMG = 'https://raw.githubusercontent.com/wpilibsuite/allwpilib/main/fieldImages/src/main/native/resources/edu/wpi/first/fields/2026-field.png';
+
+  panel.innerHTML = `
+    <div class="section">
+      <h3>2026 Rebuilt Field – Robot Trajectory</h3>
+      <div class="info-box">Robot path from <code>Swerve/Pose</code> (Pose2d struct), colored by Superstructure state. OOB detection bounds: x∈[0, 16.54 m], y∈[0, 8.05 m] (plus exact origin). Overlays from <code>Field.java</code>. Field image from WPILib allwpilib main branch.</div>
+      <div class="field-controls">
+        <label><input type="checkbox" id="show-overlays" checked> Overlays</label>
+        <label><input type="checkbox" id="show-robot" checked> Robot</label>
+        <label><input type="checkbox" id="show-path" checked> Path</label>
+        <label><input type="checkbox" id="show-vision" checked> Vision ghosts</label>
+        <label><input type="checkbox" id="show-mt1" checked> MT1</label>
+        <label><input type="checkbox" id="show-mt2" checked> MT2</label>
+        <select id="cam-select" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:4px;padding:2px 6px;font-size:12px">
+          <option value="all">All cameras</option>
+          <option value="limelight-right">Right</option>
+          <option value="limelight-left">Left</option>
+          <option value="limelight-back">Back</option>
+        </select>
+        <select id="period-select" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:4px;padding:2px 6px;font-size:12px"></select>
+        <input type="range" id="time-slider" min="0" max="1000" value="0" style="flex:1;min-width:200px">
+        <span id="time-label" style="font-size:12px;color:#94a3b8;width:60px">—</span>
+        <button class="btn" id="field-play-btn">▶ Play</button>
+      </div>
+      <div id="pose-readout" style="display:flex;gap:6px;align-items:center;padding:4px 0 8px;flex-wrap:wrap"></div>
+      <div id="field-canvas-wrap"><canvas id="field-canvas"></canvas></div>
+      <div id="field-legend" class="legend" style="margin-top:10px"></div>
+    </div>`;
+
+  const canvas      = panel.querySelector('#field-canvas');
+  const ctx         = canvas.getContext('2d');
+  const slider      = panel.querySelector('#time-slider');
+  const timeLabel   = panel.querySelector('#time-label');
+  const playBtn     = panel.querySelector('#field-play-btn');
+  const periodSel   = panel.querySelector('#period-select');
+
+  const poseSamples  = P.get('Swerve/Pose');
+  const stateSamples = P.get('Superstructure/State');
+
+  // Compute enabled periods from DS:enabled (merge gaps < 3 s)
+  const enabledPeriods = (() => {
+    const enabledS = P.get('DS:enabled');
+    const raw = [];
+    let start = null;
+    for (const { ts, val } of enabledS) {
+      if (val && start === null) start = ts;
+      else if (!val && start !== null) { raw.push([start, ts]); start = null; }
+    }
+    if (start !== null) raw.push([start, maxT]);
+    const merged = [];
+    for (const [s, e] of raw) {
+      if (merged.length && s - merged[merged.length-1][1] < 3) merged[merged.length-1][1] = e;
+      else merged.push([s, e]);
+    }
+    return merged.filter(([s, e]) => e - s > 0.5);
+  })();
+
+  // Populate period selector
+  periodSel.innerHTML = `<option value="all">All time (${minT.toFixed(1)}s – ${maxT.toFixed(1)}s)</option>`;
+  enabledPeriods.forEach(([s, e], i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `Period ${i+1}  (${s.toFixed(1)}s – ${e.toFixed(1)}s)`;
+    periodSel.appendChild(opt);
+  });
+  // Default to all time so OOB incidents span the full log
+  // Active time window — updated when period changes
+  let curMinT = minT;
+  let curMaxT = maxT;
+
+  function applyPeriod() {
+    const v = periodSel.value;
+    const enabledOnly = !document.body.classList.contains('show-disabled');
+    if (v === 'all') {
+      if (enabledOnly && enabledPeriods.length) {
+        curMinT = enabledPeriods[0][0];
+        curMaxT = enabledPeriods[enabledPeriods.length - 1][1];
+      } else {
+        curMinT = minT; curMaxT = maxT;
+      }
+    } else {
+      [curMinT, curMaxT] = enabledPeriods[+v];
+    }
+    currentT = curMinT;
+    slider.value = 0;
+    timeLabel.textContent = curMinT.toFixed(1) + 's';
+    drawAll(curMinT);
+    renderOobList();
+  }
+  periodSel.addEventListener('change', applyPeriod);
+
+  // Path color legend — only states that appear in the log
+  const legendEl = panel.querySelector('#field-legend');
+  const seenStates = [...new Set(stateSamples.map(s => s.val))];
+  seenStates.forEach(state => {
+    const color = sc(COLORS.superstructure, state);
+    legendEl.innerHTML += `<div class="legend-item"><div class="legend-dot" style="background:${color}"></div>${state}</div>`;
+  });
+
+  // Per-camera vision poses
+  const CAMS = ['limelight-right','limelight-left','limelight-back'];
+  const CAM_COLORS = ['#3b82f6', '#22c55e', '#f97316'];
+  const visionPoses = CAMS.map(c => ({
+    mt1: P.get(`Vision/${c}/Pose MT1`), mt2: P.get(`Vision/${c}/Pose MT2`), color: CAM_COLORS[CAMS.indexOf(c)]
+  }));
+
+  let imgLoaded = false, imgError = false;
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload  = () => { imgLoaded = true;  drawAll(); };
+  img.onerror = () => { imgError  = true;  drawAll(); };
+  img.src = FIELD_IMG;
+
+  // Find stateMap for trajectory coloring
+  function stateAtTime(t) {
+    if (!stateSamples.length) return null;
+    let last = stateSamples[0].val;
+    for (const s of stateSamples) { if (s.ts <= t) last = s.val; else break; }
+    return last;
+  }
+
+  function toCanvas(fieldX, fieldY) {
+    const W = canvas.width, H = canvas.height;
+    return [
+      (fieldX / FIELD.LENGTH_M) * W,
+      H - (fieldY / FIELD.WIDTH_M) * H,
+    ];
+  }
+
+  function circle(x, y, r, stroke, fill = null, lw = 1.5) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, 2 * Math.PI);
+    ctx.lineWidth = lw;
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    ctx.strokeStyle = stroke;
+    ctx.stroke();
+  }
+
+  function drawSchematic() {
+    ctx.fillStyle = '#1a3a2a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+  }
+
+  function drawOverlays() {
+    if (!panel.querySelector('#show-overlays').checked) return;
+    const scale = canvas.width / FIELD.LENGTH_M;
+    const rHub = FIELD.HUB_RADIUS * scale;
+    const [hx, hy] = toCanvas(FIELD.HUB_X, FIELD.HUB_Y);
+
+    // Hub circle
+    circle(hx, hy, rHub, '#f97316', null, 2.5);
+
+    // Opponent zone line
+    const [ox] = toCanvas(FIELD.OPPONENT_ZONE_X, 0);
+    ctx.beginPath(); ctx.moveTo(ox, 0); ctx.lineTo(ox, canvas.height);
+    ctx.strokeStyle = '#ef444466'; ctx.lineWidth = 1.5; ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
+
+    // Ferry zones (small squares)
+    const ferryZones = [FIELD.INNER_LEFT_FERRY, FIELD.INNER_RIGHT_FERRY, FIELD.OUTER_LEFT_FERRY, FIELD.OUTER_RIGHT_FERRY];
+    const ferryNames = ['ILF', 'IRF', 'OLF', 'ORF'];
+    ferryZones.forEach(([fx, fy], i) => {
+      const [cx, cy] = toCanvas(fx, fy);
+      circle(cx, cy, 6, '#8b5cf6', '#8b5cf644');
+      ctx.fillStyle = '#94a3b8'; ctx.font = '9px system-ui'; ctx.fillText(ferryNames[i], cx + 7, cy + 3);
+    });
+
+    // Tower
+    const [tx, ty] = toCanvas(FIELD.TOWER_FAR_CENTER[0], FIELD.TOWER_FAR_CENTER[1]);
+    ctx.fillStyle = '#fbbf24'; ctx.fillRect(tx - 4, ty - 4, 8, 8);
+    ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1; ctx.strokeRect(tx - 4, ty - 4, 8, 8);
+  }
+
+  function drawGhostRobot(x, y, angle, color) {
+    const [cx, cy] = toCanvas(x, y);
+    const scale = canvas.width / FIELD.LENGTH_M;
+    const r = 0.45 * scale;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-angle);
+    ctx.fillStyle = color + '33';
+    ctx.fillRect(-r, -r, 2*r, 2*r);
+    ctx.strokeStyle = color + 'bb';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 3]);
+    ctx.strokeRect(-r, -r, 2*r, 2*r);
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(r * 0.8, 0);
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.restore();
+  }
+
+  function sampleAtTime(samples, t) {
+    let best = null;
+    for (const s of samples) {
+      if (s.ts <= t) best = s;
+      else break;
+    }
+    return best?.val ?? null;
+  }
+
+  function drawVisionPoses(t) {
+    if (!panel.querySelector('#show-vision').checked) return;
+    const showMt1   = panel.querySelector('#show-mt1').checked;
+    const showMt2   = panel.querySelector('#show-mt2').checked;
+    const camFilter = panel.querySelector('#cam-select').value;
+    visionPoses.forEach(({ mt1, mt2, color }, i) => {
+      if (camFilter !== 'all' && camFilter !== CAMS[i]) return;
+      if (showMt1) {
+        const v = sampleAtTime(mt1, t);
+        if (v) drawGhostRobot(v.x, v.y, v.angle ?? 0, color);
+      }
+      if (showMt2) {
+        const v = sampleAtTime(mt2, t);
+        if (v) drawGhostRobot(v.x, v.y, v.angle ?? 0, color + 'cc');
+      }
+    });
+  }
+
+  function isInDisabled(t) {
+    for (const [s, e] of _disabledIntervals) { if (t >= s && t <= e) return true; }
+    return false;
+  }
+
+  function drawPath() {
+    if (!panel.querySelector('#show-path').checked || !poseSamples.length) return;
+    let prev = null;
+    for (const { ts, val } of poseSamples) {
+      if (!val || ts < curMinT || ts > curMaxT) { prev = null; continue; }
+      const [cx, cy] = toCanvas(val.x, val.y);
+      if (prev) {
+        ctx.beginPath(); ctx.moveTo(prev[0], prev[1]); ctx.lineTo(cx, cy);
+        ctx.strokeStyle = (sc(COLORS.superstructure, stateAtTime(ts)) || '#22c55e') + 'bb';
+        ctx.lineWidth = 1.5; ctx.stroke();
+      }
+      prev = [cx, cy];
+    }
+  }
+
+  function drawRobotAt(t) {
+    if (!poseSamples.length) return;
+    let best = poseSamples[0];
+    for (const s of poseSamples) { if (s.ts <= t) best = s; else break; }
+    if (!best.val) return;
+    const [rx, ry] = toCanvas(best.val.x, best.val.y);
+    const angle = best.val.angle ?? 0;
+    const scale = canvas.width / FIELD.LENGTH_M;
+    const r = 0.45 * scale; // ~45cm half-width
+
+    const stateColor = sc(COLORS.superstructure, stateAtTime(t)) || '#3b82f6';
+    ctx.save();
+    ctx.translate(rx, ry);
+    ctx.rotate(-angle); // field: CCW = +angle, canvas: CW = +angle
+    ctx.fillStyle = stateColor + '99';
+    ctx.fillRect(-r, -r, 2*r, 2*r);
+    ctx.strokeStyle = stateColor; ctx.lineWidth = 2; ctx.strokeRect(-r, -r, 2*r, 2*r);
+    // direction arrow
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(r, 0);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.restore();
+  }
+
+  let currentT = curMinT;
+
+  function drawAll(t = currentT) {
+    canvas.width = canvas.parentElement.offsetWidth || 800;
+    canvas.height = Math.round(canvas.width * FIELD.WIDTH_M / FIELD.LENGTH_M);
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    try {
+      if (imgLoaded) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      else drawSchematic();
+    } catch { drawSchematic(); }
+
+    drawVisionPoses(t);
+    drawPath();
+    drawOverlays();
+    if (poseSamples.length && panel.querySelector('#show-robot').checked) drawRobotAt(t);
+
+    const poseReadout = panel.querySelector('#pose-readout');
+    if (poseReadout) {
+      const ps = sampleAtTime(poseSamples, t);
+      if (ps) {
+        const oob = isOob(ps.x, ps.y);
+        const deg = (ps.heading * 180 / Math.PI).toFixed(1);
+        poseReadout.innerHTML =
+          `<span class="pose-pill"><span class="pill-label">x</span>${ps.x.toFixed(3)} m</span>` +
+          `<span class="pose-pill"><span class="pill-label">y</span>${ps.y.toFixed(3)} m</span>` +
+          `<span class="pose-pill"><span class="pill-label">θ</span>${deg}°</span>` +
+          (oob ? `<span class="pose-pill oob">⚠ OUT OF FIELD</span>` : '');
+      } else {
+        poseReadout.innerHTML =
+          `<span class="pose-pill"><span class="pill-label">x</span>—</span>` +
+          `<span class="pose-pill"><span class="pill-label">y</span>—</span>` +
+          `<span class="pose-pill"><span class="pill-label">θ</span>—</span>`;
+      }
+    }
+  }
+
+  // Slider
+  slider.addEventListener('input', () => {
+    currentT = curMinT + (slider.value / 1000) * (curMaxT - curMinT);
+    timeLabel.textContent = currentT.toFixed(1) + 's';
+    drawAll(currentT);
+  });
+
+  // Play button
+  let playing = false, raf = null;
+  function stepPlay() {
+    if (!playing) return;
+    currentT += 0.05;
+    if (currentT > curMaxT) { currentT = curMinT; }
+    slider.value = Math.round(((currentT - curMinT) / (curMaxT - curMinT)) * 1000);
+    timeLabel.textContent = currentT.toFixed(1) + 's';
+    drawAll(currentT);
+    raf = setTimeout(stepPlay, 50);
+  }
+  playBtn.onclick = () => {
+    playing = !playing;
+    playBtn.textContent = playing ? '⏸ Pause' : '▶ Play';
+    if (playing) stepPlay();
+    else if (raf) clearTimeout(raf);
+  };
+
+  // Checkboxes trigger redraw
+  ['show-overlays','show-robot','show-path','show-vision','show-mt1','show-mt2'].forEach(id => {
+    panel.querySelector('#' + id).addEventListener('change', () => drawAll());
+  });
+  panel.querySelector('#cam-select').addEventListener('change', () => drawAll());
+
+  if (!poseSamples.length) {
+    const n = document.createElement('div'); n.className = 'warn-box';
+    n.textContent = 'No Swerve/Pose data found. The struct decoder requires DogLog to have logged Pose2d values, and the parser must see the matching struct:Pose2d type-string control record before any data records.';
+    panel.querySelector('.section').appendChild(n);
+  }
+
+  // Out-of-field incident detection
+  function isOob(x, y) { return x < 0 || x > FIELD.LENGTH_M || y < 0 || y > FIELD.WIDTH_M || isZero(x, y); }
+  function isZero(x, y) { return Math.abs(x) < 0.01 && Math.abs(y) < 0.01; }
+
+  // Collect ALL hits once; renderOobList filters by curMinT/curMaxT
+  const allOobHits = [];
+  for (const { ts, val } of poseSamples) {
+    if (val && isOob(val.x, val.y)) allOobHits.push({ ts, src: 'Robot', x: val.x, y: val.y });
+  }
+  visionPoses.forEach(({ mt1, mt2 }, i) => {
+    const camLabel = CAMS[i].replace('limelight-', '');
+    for (const [poses, tag] of [[mt1,'MT1'],[mt2,'MT2']]) {
+      for (const { ts, val } of poses) {
+        if (val && isOob(val.x, val.y)) allOobHits.push({ ts, src: `${camLabel} ${tag}`, x: val.x, y: val.y });
+      }
+    }
+  });
+  allOobHits.sort((a, b) => a.ts - b.ts);
+
+  const sec = panel.querySelector('.section');
+  const ctrlRow = document.createElement('div');
+  ctrlRow.style.cssText = 'margin-top:16px;display:flex;align-items:center;gap:12px';
+  const filterCb = document.createElement('input');
+  filterCb.type = 'checkbox'; filterCb.id = 'oob-filter-zero'; filterCb.checked = true;
+  const filterLbl = document.createElement('label');
+  filterLbl.htmlFor = 'oob-filter-zero';
+  filterLbl.style.cssText = 'font-size:12px;color:#94a3b8;cursor:pointer';
+  filterLbl.textContent = 'Hide (0, 0) poses';
+  ctrlRow.appendChild(filterCb); ctrlRow.appendChild(filterLbl);
+  sec.appendChild(ctrlRow);
+
+  const oobHdr  = document.createElement('h4');
+  oobHdr.style.cssText = 'margin:10px 0 6px;font-size:13px;color:#94a3b8';
+  sec.appendChild(oobHdr);
+  const oobList = document.createElement('div'); oobList.className = 'oob-list';
+  sec.appendChild(oobList);
+
+  function renderOobList() {
+    const hideZero = filterCb.checked;
+    const enabledOnly = !document.body.classList.contains('show-disabled');
+    const hits = allOobHits.filter(h =>
+      h.ts >= curMinT && h.ts <= curMaxT &&
+      !(hideZero && isZero(h.x, h.y)) &&
+      !(enabledOnly && isInDisabled(h.ts))
+    );
+    // Group by source; a new incident starts when gap > 0.1s (5 × 20ms loop)
+    const incidents = [];
+    const lastTs = {};
+    for (const h of hits) {
+      if ((lastTs[h.src] ?? -Infinity) + 0.1 < h.ts) { incidents.push(h); }
+      lastTs[h.src] = h.ts;
+    }
+    const rawNote = hits.length !== incidents.length ? ` — ${hits.length} raw samples` : '';
+    oobHdr.textContent = `Out-of-field incidents (${incidents.length}${rawNote})`;
+    oobList.innerHTML = '';
+    if (!incidents.length) {
+      oobList.innerHTML = '<div style="padding:10px;font-size:12px;color:#64748b">None detected.</div>';
+      return;
+    }
+    for (const { ts, src, x, y } of incidents) {
+      const row = document.createElement('div'); row.className = 'oob-row';
+      row.innerHTML = `
+        <span class="oob-ts">${ts.toFixed(2)}s</span>
+        <span class="oob-src">${src}</span>
+        <span class="oob-pos">(${x.toFixed(2)}, ${y.toFixed(2)}) m</span>
+        <button class="oob-jump">Jump</button>`;
+      const jump = () => {
+        currentT = ts;
+        slider.value = Math.round(((ts - curMinT) / (curMaxT - curMinT)) * 1000);
+        timeLabel.textContent = ts.toFixed(1) + 's';
+        drawAll(currentT);
+      };
+      row.querySelector('.oob-jump').addEventListener('click', e => { e.stopPropagation(); jump(); });
+      row.addEventListener('click', jump);
+      oobList.appendChild(row);
+    }
+  }
+
+  filterCb.addEventListener('change', renderOobList);
+  renderOobList();
+
+  // Distance from Hub
+  const disHub = P.get('Swerve/Distance From Hub (meters)');
+  if (disHub.length) {
+    section(panel, 'Distance from Hub', d => {
+      makeLineChart(d, [lineDataset('Distance (m)', toXY(disHub), '#f59e0b')], 'm');
+    });
+  }
+
+  window.addEventListener('resize', () => drawAll(currentT));
+  document.addEventListener('enabled-only-change', applyPeriod);
+  setTimeout(() => applyPeriod(), 50);
+}
+
+// ================================================================
+// TAB 4: POWER / ENERGY
+// ================================================================
+function renderPower(panel, P, minT, maxT) {
+  const usedWh     = P.get('EnergyUtil/Total Used Energy Watt Hours');
+  const battV      = P.get('Robot/Battery Voltage');
+
+  // Dynamic per-subsystem keys
+  const supplyMap  = P.match(/^EnergyUtil\/Supply Current Amps\//);
+
+  const totalCurr = P.get('Robot/Total Current Draw');
+  const powerMap   = P.match(/^EnergyUtil\/Power Watts\//);
+  const whMap      = P.match(/^EnergyUtil\/Energy Watt Hours\//);
+
+  // Synthesize instantaneous total power by summing subsystems (same bucketing as totalCurr)
+  const totalPower = (() => {
+    const series = leafSeriesOnly(powerMap);
+    if (!series.length) return [];
+    const DT = 0.02;
+    const tsMap = new Map();
+    for (const samples of series)
+      for (const { ts, val } of samples) {
+        const bucket = Math.round(ts / DT) * DT;
+        tsMap.set(bucket, (tsMap.get(bucket) ?? 0) + val);
+      }
+    return [...tsMap.entries()].sort((a,b)=>a[0]-b[0]).map(([ts,val])=>({ts,val}));
+  })();
+
+  // Source notes
+  const srcNote = document.createElement('div'); srcNote.className = 'info-box';
+  srcNote.innerHTML = '<strong>EnergyUtil notes:</strong> Total current uses <code>Robot/Total Current Draw</code> (summed supply currents from robot code). Per-subsystem currents are per-loop supply values from EnergyUtil. "Total current Power Watts" has a bug in <code>EnergyUtil.java:71</code> — it logs <em>current amps</em> not power watts.';
+  panel.appendChild(srcNote);
+
+  // KPIs
+  section(panel, 'Energy Summary', d => {
+    const pkCurr = peakVal(totalCurr);
+    const avgPow = avgVal(totalPower);
+    const totalWh = lastVal(usedWh);
+    kpis(d, [
+      { label: 'Total Energy',   value: fmt(totalWh, 2), unit: 'Wh' },
+      { label: 'Peak Current',   value: fmt(pkCurr, 0),  unit: 'A' },
+      { label: 'Avg Power',      value: fmt(avgPow, 0),  unit: 'W' },
+      { label: 'Min Battery V',  value: fmt(minVal(battV), 1), unit: 'V' },
+    ]);
+  });
+
+  // 1. Battery voltage
+  if (battV.length) {
+    section(panel, 'Battery Voltage', d => {
+      makeLineChart(d, [lineDataset('Voltage (V)', toXY(battV), '#22c55e')], 'Volts',
+        { brownout: hLine(5.5, '5.5 V brownout', '#ef4444') });
+    });
+  }
+
+  // 2. Total current draw
+  if (totalCurr.length) {
+    section(panel, 'Total Current Draw', d => {
+      makeLineChart(d, [lineDataset('Total Current Draw (A)', toXY(totalCurr), '#3b82f6')], 'Amps', {
+        l120: hLine(120, '120 A (CB285 rated)',  '#f59e0b', [5,4]),
+        l240: hLine(240, '240 A (2× rated)',      '#ef4444', [3,4]),
+        l360: hLine(360, '360 A (3× rated)',      '#dc2626', [2,3]),
+      });
+    });
+  }
+
+  // Per-subsystem current breakdown
+  const subsysEntries = Object.entries(supplyMap);
+  if (subsysEntries.length) {
+    section(panel, 'Per-Subsystem Supply Current', d => {
+      const palette = ['#3b82f6','#22c55e','#f97316','#8b5cf6','#ec4899','#06b6d4','#f59e0b','#10b981','#ef4444','#14b8a6'];
+      const ds = subsysEntries.map(([key, samples], i) => {
+        const name = key.replace('EnergyUtil/Supply Current Amps/', '');
+        return lineDataset(name, toXY(samples), palette[i % palette.length]);
+      });
+      makeLineChart(d, ds, 'Amps');
+    });
+
+    section(panel, 'Per-Subsystem Energy (Wh)', d => {
+      const palette = ['#3b82f6','#22c55e','#f97316','#8b5cf6','#ec4899','#06b6d4','#f59e0b','#10b981','#ef4444','#14b8a6'];
+      const whEntries = Object.entries(whMap).map(([key, samples], i) => ({
+        name: key.replace('EnergyUtil/Energy Watt Hours/', ''),
+        samples,
+        color: palette[i % palette.length],
+      }));
+
+      // Time-series chart — subsystems + total
+      const ds = whEntries.map(({ name, samples, color }) => lineDataset(name, toXY(samples), color));
+      if (usedWh.length) ds.push(lineDataset('Total', toXY(usedWh), '#ffffff', { borderWidth: 2, borderDash: [4, 3] }));
+      makeLineChart(d, ds, 'Wh');
+
+      // Final values for pie + table
+      const finalVals = whEntries.map(({ name, samples, color }) => ({
+        name, color, val: lastVal(samples) ?? 0,
+      })).sort((a, b) => b.val - a.val);
+
+      // Side-by-side: pie + table
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:24px;align-items:flex-start;margin-top:12px';
+
+      const pieWrap = document.createElement('div');
+      pieWrap.style.cssText = 'flex:0 0 260px;height:260px;position:relative';
+      const pieCanvas = document.createElement('canvas');
+      pieWrap.appendChild(pieCanvas);
+      row.appendChild(pieWrap);
+
+      const pieChart = new Chart(pieCanvas, {
+        type: 'pie',
+        data: {
+          labels: finalVals.map(f => f.name),
+          datasets: [{
+            data: finalVals.map(f => f.val),
+            backgroundColor: finalVals.map(f => f.color),
+            borderColor: '#0f172a',
+            borderWidth: 1,
+          }],
+        },
+        options: {
+          animation: false, responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label(item) {
+                  const v = item.raw;
+                  const pct = (v / finalVals.reduce((s, f) => s + f.val, 0) * 100).toFixed(1);
+                  return `${item.label}: ${v.toFixed(3)} Wh (${pct}%)`;
+                },
+              },
+            },
+          },
+        },
+      });
+      _charts.push(pieChart);
+
+      const tbl = document.createElement('table');
+      tbl.style.cssText = 'flex:1;align-self:center';
+      tbl.innerHTML = `<thead><tr><th>Subsystem</th><th>Total Energy (Wh)</th><th>%</th></tr></thead><tbody>
+        ${finalVals.map(({ name, val, color }) => {
+          const pct = (val / finalVals.reduce((s, f) => s + f.val, 0) * 100).toFixed(1);
+          return `<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:6px"></span>${name}</td><td>${val.toFixed(3)}</td><td>${pct}%</td></tr>`;
+        }).join('')}</tbody>`;
+      row.appendChild(tbl);
+      d.appendChild(row);
+    });
+
+  }
+
+  // 5. Power
+  if (totalPower.length) {
+    section(panel, 'Total Power Draw', d => {
+      makeLineChart(d, [lineDataset('Inst. Total Power (summed subsystems, W)', toXY(totalPower), '#8b5cf6')], 'Watts');
+    });
+  }
+
+  // 6. Breaker trip curve
+  if (totalCurr.length) {
+    section(panel, 'Breaker Trip Curve (CB285, 120 A rated)', d => {
+      const note = document.createElement('div'); note.className = 'info-box';
+      note.textContent = 'Scatter: each excursion above threshold. X = duration (log scale), Y = peak current. Lines: CB285 lower / upper trip boundaries. Points to the right of the upper curve lasted longer than the maximum trip time — breaker almost certainly tripped. Points between the curves are uncertain. Points left of the lower curve were too brief to trip.';
+      d.appendChild(note);
+
+      const exs120 = findExcursions(totalCurr, 120);
+      const exs240 = findExcursions(totalCurr, 240);
+
+      const { lower, upper } = tripCurveAnnotations();
+      const lLine = lower.map(p => ({ x: p.x, y: p.y }));
+      const uLine = upper.map(p => ({ x: p.x, y: p.y }));
+
+      const datasets = [
+        {
+          label: 'CB285 Lower Bound',
+          data: lLine,
+          borderColor: '#22c55e', backgroundColor: 'transparent',
+          showLine: true, pointRadius: 0, borderWidth: 1.5, borderDash: [4,3],
+        },
+        {
+          label: 'CB285 Upper Bound',
+          data: uLine,
+          borderColor: '#ef4444', backgroundColor: 'transparent',
+          showLine: true, pointRadius: 0, borderWidth: 1.5, borderDash: [4,3],
+        },
+      ];
+
+      // Toggle: mean vs peak Y axis
+      let useMean = true;
+      const toggleRow = document.createElement('div');
+      toggleRow.style.cssText = 'display:flex;gap:12px;align-items:center;margin-bottom:8px;font-size:12px;color:#94a3b8';
+      toggleRow.innerHTML = `<span>Y axis:</span>
+        <label style="cursor:pointer"><input type="radio" name="trip-y" value="mean" checked> Mean</label>
+        <label style="cursor:pointer"><input type="radio" name="trip-y" value="peak"> Peak</label>`;
+      d.appendChild(toggleRow);
+
+      function makeExData(exs, useMean) {
+        return exs.map(e => ({ x: e.dur, y: useMean ? e.mean : e.peak, start: e.start, peak: e.peak, mean: e.mean }));
+      }
+
+      if (exs120.length) datasets.push({
+        label: `Excursions >120 A (${exs120.length})`,
+        data: makeExData(exs120, true),
+        borderColor: '#f59e0b', backgroundColor: '#f59e0b',
+        showLine: false, pointRadius: 5, pointStyle: 'circle',
+        _exs: exs120,
+      });
+      if (exs240.length) datasets.push({
+        label: `Excursions >240 A (${exs240.length})`,
+        data: makeExData(exs240, true),
+        borderColor: '#ef4444', backgroundColor: '#ef4444',
+        showLine: false, pointRadius: 5, pointStyle: 'triangle',
+        _exs: exs240,
+      });
+
+      const tripChart = makeScatterChart(d, datasets, 'Duration (s, log scale)', 'Current (A)', {}, true);
+      tripChart.options.scales.y.max = 500;
+      tripChart.options.plugins.tooltip = {
+        callbacks: {
+          label(item) {
+            const pt = item.raw;
+            const startStr = pt.start != null ? `  start: ${pt.start.toFixed(2)}s` : '';
+            return `${item.dataset.label}: dur=${pt.x.toFixed(3)}s  peak=${pt.peak.toFixed(0)} A  mean=${pt.mean.toFixed(0)} A${startStr}`;
+          },
+        },
+      };
+      tripChart.update('none');
+
+      toggleRow.querySelectorAll('input[name="trip-y"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+          useMean = radio.value === 'mean';
+          tripChart.data.datasets.forEach(ds => {
+            if (ds._exs) ds.data = makeExData(ds._exs, useMean);
+          });
+          tripChart.options.scales.y.title.text = useMean ? 'Mean Current (A)' : 'Peak Current (A)';
+          tripChart.update();
+        });
+      });
+
+      if (exs120.length) {
+        const PAGE = 15;
+        let page = 0;
+        const pages = () => Math.ceil(exs120.length / PAGE);
+
+        const tbl = document.createElement('table'); tbl.style.marginTop = '12px';
+        const thead = `<thead><tr><th>Start (s)</th><th>End (s)</th><th>Duration (s)</th><th>Peak (A)</th><th>Mean (A)</th></tr></thead>`;
+        const tbody = document.createElement('tbody');
+        tbl.innerHTML = thead;
+        tbl.appendChild(tbody);
+
+        const pgRow = document.createElement('div');
+        pgRow.style.cssText = 'display:flex;align-items:center;gap:10px;margin-top:6px;font-size:12px;color:#94a3b8';
+        const prevBtn = document.createElement('button'); prevBtn.className = 'btn'; prevBtn.textContent = '← Prev';
+        const nextBtn = document.createElement('button'); nextBtn.className = 'btn'; nextBtn.textContent = 'Next →';
+        const pgLabel = document.createElement('span');
+        pgRow.appendChild(prevBtn); pgRow.appendChild(pgLabel); pgRow.appendChild(nextBtn);
+
+        function renderPage() {
+          const slice = exs120.slice(page * PAGE, (page + 1) * PAGE);
+          tbody.innerHTML = slice.map(e =>
+            `<tr><td>${e.start.toFixed(2)}</td><td>${e.end.toFixed(2)}</td><td>${e.dur.toFixed(3)}</td><td>${e.peak.toFixed(0)}</td><td>${e.mean.toFixed(0)}</td></tr>`
+          ).join('');
+          pgLabel.textContent = `Page ${page + 1} of ${pages()}  (${exs120.length} total)`;
+          prevBtn.disabled = page === 0;
+          nextBtn.disabled = page >= pages() - 1;
+        }
+
+        prevBtn.addEventListener('click', () => { page--; renderPage(); });
+        nextBtn.addEventListener('click', () => { page++; renderPage(); });
+        renderPage();
+
+        d.appendChild(tbl);
+        d.appendChild(pgRow);
+      } else {
+        noData(d, 'No excursions above 120 A detected in this log.');
+      }
+    });
+  } else {
+    section(panel, 'Power', d => noData(d, 'EnergyUtil keys not found in this log. Verify EnergyUtil is instantiated in Robot.java.'));
+  }
+}
+
+// ================================================================
+// TAB 5: SWERVE
+// ================================================================
+function renderSwerve(panel, P, minT, maxT) {
+  section(panel, 'Velocity', d => {
+    const vfx = P.get('Swerve/Velocity Field Relative X (m per s)');
+    const vfy = P.get('Swerve/Velocity Field Relative Y (m per s)');
+    const vrx = P.get('Swerve/Velocity Robot Relative X (m per s)');
+    const vry = P.get('Swerve/Velocity Robot Relative Y (m per s)');
+    const ang = P.get('Swerve/Angular Velocity (rad per s)');
+    const ax  = P.get('Swerve/Robot Accel X');
+    const ay  = P.get('Swerve/Robot Accel Y');
+    if (!vfx.length && !vfy.length) return noData(d);
+    const ds = [];
+    if (vfx.length) ds.push(lineDataset('Field X (m/s)', toXY(vfx), '#3b82f6'));
+    if (vfy.length) ds.push(lineDataset('Field Y (m/s)', toXY(vfy), '#22c55e'));
+    if (vrx.length) ds.push(lineDataset('Robot X (m/s)', toXY(vrx), '#f97316', { borderDash:[3,3] }));
+    if (vry.length) ds.push(lineDataset('Robot Y (m/s)', toXY(vry), '#ec4899', { borderDash:[3,3] }));
+    makeLineChart(d, ds, 'm/s', {
+      max: hLine(SETTINGS.swerve.maxVel, `Max ${SETTINGS.swerve.maxVel} m/s`, '#64748b', [2,4]),
+      sotm: hLine(SETTINGS.swerve.maxVelSotm, `SOTM Max ${SETTINGS.swerve.maxVelSotm} m/s`, '#f97316', [3,4]),
+    });
+
+    if (ang.length) {
+      d.appendChild(document.createElement('h4')).textContent = 'Angular Velocity';
+      makeLineChart(d, [lineDataset('Ang Vel (rad/s)', toXY(ang), '#8b5cf6')], 'rad/s');
+    }
+    if (ax.length || ay.length) {
+      d.appendChild(document.createElement('h4')).textContent = 'Acceleration';
+      const ads = [];
+      if (ax.length) ads.push(lineDataset('Accel X (m/s²)', toXY(ax), '#3b82f6'));
+      if (ay.length) ads.push(lineDataset('Accel Y (m/s²)', toXY(ay), '#22c55e'));
+      makeLineChart(d, ads, 'm/s²');
+    }
+  });
+
+  // Per-module
+  section(panel, 'Swerve Modules', d => {
+    const MODULE_NAMES = ['FL', 'FR', 'BL', 'BR'];
+    for (let i = 0; i < 4; i++) {
+      const prefix = `Swerve/Modules/Module ${i}`;
+      const spd    = P.get(`${prefix}/Speed (m per s)`);
+      const tSpd   = P.get(`${prefix}/Target Speed (m per s)`);
+      const ang    = P.get(`${prefix}/Angle (deg)`);
+      const tAng   = P.get(`${prefix}/Target Angle (deg)`);
+      if (!spd.length && !ang.length) continue;
+
+      const h = document.createElement('h4'); h.textContent = `Module ${i} (${MODULE_NAMES[i]})`; d.appendChild(h);
+      if (spd.length || tSpd.length) {
+        const ds = [];
+        if (tSpd.length) ds.push(lineDataset(`Target Spd`, toXY(tSpd), '#f97316', { borderDash:[4,3] }));
+        if (spd.length)  ds.push(lineDataset(`Speed`,       toXY(spd),  '#22c55e'));
+        makeLineChart(d, ds, 'm/s');
+      }
+      if (ang.length || tAng.length) {
+        const ds = [];
+        if (tAng.length) ds.push(lineDataset(`Target Angle`, toXY(tAng), '#f97316', { borderDash:[4,3] }));
+        if (ang.length)  ds.push(lineDataset(`Angle`,        toXY(ang),  '#22c55e'));
+        makeLineChart(d, ds, 'Degrees');
+      }
+    }
+  });
+
+}
+
+// ================================================================
+// TAB 6: INTAKE & HANDLING
+// ================================================================
+function renderIntakeHandling(panel, P, minT, maxT) {
+  // Intake
+  section(panel, 'Intake', d => {
+    const pivotState  = P.get('Intake/Pivot State');
+    const rollerState = P.get('Intake/Roller State');
+    const curAngle    = P.get('Intake/Current Angle (deg)');
+    const tgtAngle    = P.get('Intake/Target Angle (deg)');
+    const pivotVolt   = P.get('Intake/Pivot Voltage (volts)');
+    const pivotSupply = P.get('Intake/Pivot Supply Current (amps)');
+    const pushdown    = P.get('Intake/Pivot Pushdown Voltage Applied?');
+    const rollerLVolt = P.get('Intake/Roller Leader Voltage (volts)');
+    const rollerLCurr = P.get('Intake/Roller Leader Current (amps)');
+    const rollerFVolt = P.get('Intake/Roller Follower Voltage (volts)');
+    const rollerFCurr = P.get('Intake/Roller Follower Current (amps)');
+    const atTol       = P.get('Intake/Pivot At Tolerance?');
+
+    if (!pivotState.length && !rollerState.length) return noData(d);
+
+    motorKpis(d, [
+      { label: 'Pivot',           curr: pivotSupply },
+      { label: 'Roller Leader',   curr: rollerLCurr },
+      { label: 'Roller Follower', curr: rollerFCurr },
+    ]);
+
+    if (pivotState.length)  stateLegend(d, pivotState,  COLORS.pivotState);
+    if (rollerState.length) stateLegend(d, rollerState, COLORS.rollerState);
+
+    const rows = [
+      pivotState.length  && { name: 'Pivot State',     segments: toSegments(pivotState),  colorFn: v => sc(COLORS.pivotState, v)  },
+      rollerState.length && { name: 'Roller State',    segments: toSegments(rollerState), colorFn: v => sc(COLORS.rollerState, v) },
+      atTol.length       && { name: 'At Tolerance?',  segments: toSegments(atTol),        colorFn: v => v ? '#22c55e' : '#374151' },
+      pushdown.length    && { name: 'Pushdown Active?',segments: toSegments(pushdown),     colorFn: v => v ? '#f59e0b' : '#374151' },
+    ].filter(Boolean);
+    renderTimeline(d, rows, minT, maxT);
+
+    if (tgtAngle.length || curAngle.length) {
+      const h = document.createElement('h4'); h.textContent = 'Pivot Angle'; d.appendChild(h);
+      const ds = [];
+      if (tgtAngle.length) ds.push(lineDataset('Target (°)', toXY(tgtAngle), '#f97316', { borderDash:[4,3] }));
+      if (curAngle.length) ds.push(lineDataset('Current (°)', toXY(curAngle), '#22c55e'));
+      makeLineChart(d, ds, 'Degrees', {
+        stow:   hLine(71,  'STOW 71°',   '#6b7280'),
+        deploy: hLine(-10, 'DEPLOY −10°','#22c55e'),
+        digest: hLine(50,  'DIGEST 50°', '#06b6d4'),
+      });
+    }
+
+    if (pivotVolt.length || pivotSupply.length) {
+      const h = document.createElement('h4'); h.textContent = 'Pivot Motor'; d.appendChild(h);
+      const ds = [];
+      if (pivotVolt.length)   ds.push(lineDataset('Voltage (V)',      toXY(pivotVolt),   '#3b82f6'));
+      if (pivotSupply.length) ds.push(lineDataset('Supply Curr (A)',  toXY(pivotSupply), '#f97316'));
+      makeLineChart(d, ds, '');
+    }
+
+    if (rollerLVolt.length || rollerLCurr.length || rollerFVolt.length || rollerFCurr.length) {
+      const h = document.createElement('h4'); h.textContent = 'Roller Motors'; d.appendChild(h);
+      const ds = [];
+      if (rollerLVolt.length) ds.push(lineDataset('Leader Voltage (V)',    toXY(rollerLVolt), '#3b82f6'));
+      if (rollerLCurr.length) ds.push(lineDataset('Leader Current (A)',    toXY(rollerLCurr), '#f97316'));
+      if (rollerFVolt.length) ds.push(lineDataset('Follower Voltage (V)',  toXY(rollerFVolt), '#3b82f6', { borderDash:[4,3] }));
+      if (rollerFCurr.length) ds.push(lineDataset('Follower Current (A)',  toXY(rollerFCurr), '#f97316', { borderDash:[4,3] }));
+      makeLineChart(d, ds, '');
+    }
+  });
+
+  // Handoff
+  section(panel, 'Handoff', d => {
+    const state    = P.get('Handoff/State');
+    const rpm      = P.get('Handoff/Current RPM');
+    const leadVolt = P.get('Handoff/Lead Voltage');
+    const leadCurr = P.get('Handoff/Lead Supply Current');
+    const follVolt = P.get('Handoff/Follow Voltage');
+    const follCurr = P.get('Handoff/Follow Supply Current');
+
+    if (!state.length) return noData(d);
+
+    motorKpis(d, [
+      { label: 'Lead',   curr: leadCurr },
+      { label: 'Follow', curr: follCurr },
+    ]);
+
+    stateLegend(d, state, COLORS.handoff);
+    renderTimeline(d, [{ name: 'Handoff State', segments: toSegments(state), colorFn: v => sc(COLORS.handoff, v) }], minT, maxT);
+
+    const note = document.createElement('div'); note.className = 'info-box';
+    note.textContent = 'Note: "Follow" current/voltage keys in HandoffImpl.java:144-146 are a copy-paste of the leader signals — follower values may not reflect actual motor data.';
+    d.appendChild(note);
+
+    if (rpm.length) {
+      const h = document.createElement('h4'); h.textContent = 'RPM'; d.appendChild(h);
+      makeLineChart(d, [lineDataset('Current RPM', toXY(rpm), '#22c55e')], 'RPM',
+        { max: hLine(4800, 'Max 4800 RPM', '#64748b') });
+    }
+    if (leadVolt.length || leadCurr.length || follVolt.length || follCurr.length) {
+      const h = document.createElement('h4'); h.textContent = 'Motors'; d.appendChild(h);
+      const ds = [];
+      if (leadVolt.length) ds.push(lineDataset('Lead Voltage (V)',    toXY(leadVolt), '#3b82f6'));
+      if (leadCurr.length) ds.push(lineDataset('Lead Current (A)',    toXY(leadCurr), '#f97316'));
+      if (follVolt.length) ds.push(lineDataset('Follow Voltage (V)',  toXY(follVolt), '#3b82f6', { borderDash:[4,3] }));
+      if (follCurr.length) ds.push(lineDataset('Follow Current (A)',  toXY(follCurr), '#f97316', { borderDash:[4,3] }));
+      makeLineChart(d, ds, '');
+    }
+  });
+
+  // Spindexer
+  section(panel, 'Spindexer', d => {
+    const state   = P.get('Spindexer/State');
+    const rpm     = P.get('Spindexer/Leader Motor RPM');
+    const lVolt   = P.get('Spindexer/Leader Voltage (volts)');
+    const lCurr   = P.get('Spindexer/Leader Supply Current (amps)');
+    const fVolt   = P.get('Spindexer/Follower Voltage (volts)');
+    const fCurr   = P.get('Spindexer/Follower Supply Current (amps)');
+    const STOP_KEYS = [
+      'Spindexer/Should Stop/Is Behind Hub While Ferrying?',
+      'Spindexer/Should Stop/Is Turret Wrapping?',
+      'Spindexer/Should Stop/Is Outside Alliance Zone?',
+      'Spindexer/Should Stop/Is Under Trench?',
+      'Spindexer/Should Stop/Turret Lagging SOTM',
+      'Spindexer/Should Stop/In Manual State',
+    ];
+
+    if (!state.length) return noData(d);
+
+    motorKpis(d, [
+      { label: 'Leader',   curr: lCurr },
+      { label: 'Follower', curr: fCurr },
+    ]);
+
+    stateLegend(d, state, COLORS.spindexer);
+    renderTimeline(d, [{ name: 'Spindexer State', segments: toSegments(state), colorFn: v => sc(COLORS.spindexer, v) }], minT, maxT);
+
+    const stopRows = STOP_KEYS.map(key => {
+      const s = P.get(key);
+      return { name: key.replace('Spindexer/Should Stop/', ''), segments: toSegments(s), colorFn: v => v ? '#ef4444' : '#374151' };
+    }).filter(r => r.segments.length);
+    if (stopRows.length) {
+      const h = document.createElement('h4'); h.textContent = 'Should-Stop Reasons'; d.appendChild(h);
+      renderTimeline(d, stopRows, minT, maxT);
+    }
+
+    if (rpm.length) {
+      const h = document.createElement('h4'); h.textContent = 'RPM'; d.appendChild(h);
+      makeLineChart(d, [lineDataset('Leader RPM', toXY(rpm), '#22c55e')], 'RPM');
+    }
+    if (lVolt.length || lCurr.length || fVolt.length || fCurr.length) {
+      const h = document.createElement('h4'); h.textContent = 'Motors'; d.appendChild(h);
+      const ds = [];
+      if (lVolt.length) ds.push(lineDataset('Leader Voltage (V)',   toXY(lVolt), '#3b82f6'));
+      if (lCurr.length) ds.push(lineDataset('Leader Current (A)',   toXY(lCurr), '#f97316'));
+      if (fVolt.length) ds.push(lineDataset('Follower Voltage (V)', toXY(fVolt), '#3b82f6', { borderDash:[4,3] }));
+      if (fCurr.length) ds.push(lineDataset('Follower Current (A)', toXY(fCurr), '#f97316', { borderDash:[4,3] }));
+      makeLineChart(d, ds, '');
+    }
+  });
+}
+
+// ================================================================
+// TAB 7: VISION
+// ================================================================
+function renderVision(panel, P, minT, maxT) {
+  const CAMS = ['limelight-right', 'limelight-left', 'limelight-back'];
+  const CAM_COLORS = ['#3b82f6', '#22c55e', '#f97316'];
+
+  // Camera connect/disconnect events
+  section(panel, 'Camera Events', d => {
+    const GAP_S = 0.5; // Limelights run ~10 Hz; normal gaps ~0.1s, so 0.5s reliably flags a disconnect
+    const events = [];
+
+    // 1. Mine console log for lines mentioning connect/disconnect (case-insensitive).
+    //    WPILib writes console output under various key names; try all candidates.
+    const CONSOLE_KEYS = ['DS:console', 'systemStdout', 'messages', 'DriverStation/Console'];
+    const CONNECT_RE = /connect/i;
+    const consoleSamples = [
+      ...CONSOLE_KEYS.flatMap(k => P.get(k)),
+      // Also scan any key whose name contains "console" or "stdout"
+      ...Object.values(P.match(/console|stdout|messages/i)),
+    ].flat();
+    // Deduplicate by (ts, val) in case keys overlap
+    const seen = new Set();
+    for (const sample of consoleSamples) {
+      const { ts, val } = sample;
+      if (typeof val !== 'string') continue;
+      const lines = val.split(/\r?\n/);
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (!CONNECT_RE.test(trimmed)) continue;
+        const cam = CAMS.find(c => trimmed.toLowerCase().includes(c));
+        if (!cam) continue;
+        const key = `${ts}|${trimmed}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        events.push({ ts, cam, msg: trimmed, source: 'console' });
+      }
+    }
+
+    // 2. Detect heartbeat freezes (camera disconnect) and restarts (reconnect)
+    //    A gap > 2s with no heartbeat increment = disconnected.
+    //    Heartbeat resuming after a freeze = reconnected.
+    for (let ci = 0; ci < CAMS.length; ci++) {
+      const cam = CAMS[ci];
+      const hb = P.get(`Vision/${cam}/Heartbeat`);
+      if (hb.length < 2) continue;
+
+      let frozen = false;
+      for (let i = 1; i < hb.length; i++) {
+        const dtS = hb[i].ts - hb[i-1].ts;
+        const valChanged = hb[i].val !== hb[i-1].val;
+
+        if (!frozen && dtS > GAP_S) {
+          // Heartbeat gap — camera likely disconnected
+          events.push({ ts: hb[i-1].ts, cam, msg: `${cam}: heartbeat gap ${dtS.toFixed(1)}s — likely disconnected`, source: 'heartbeat' });
+          frozen = true;
+        } else if (frozen && valChanged) {
+          // Heartbeat resumed
+          events.push({ ts: hb[i].ts, cam, msg: `${cam}: heartbeat resumed — reconnected`, source: 'heartbeat' });
+          frozen = false;
+        }
+      }
+    }
+
+    events.sort((a, b) => a.ts - b.ts);
+
+    // Compute per-camera KPIs
+    // Disconnect count comes from the events list (matches what the table shows).
+    // Connected time comes from heartbeat intervals (gap <= GAP_S = connected).
+    const matchDur = maxT - minT;
+    function isDisconnEvt(msg) { return /disconnect/i.test(msg) || /gap/i.test(msg); }
+    function isConnEvt(msg)    { return !isDisconnEvt(msg) && /connect|resumed/i.test(msg); }
+
+    const camKpis = CAMS.map((cam, ci) => {
+      const camEvents = events.filter(e => e.cam === cam);
+      const disconnects = camEvents.filter(e => isDisconnEvt(e.msg)).length;
+
+      // Uptime from events: reconstruct connected intervals via a state machine.
+      // Initial state: if first event is a connect → camera was disconnected at start.
+      //                if first event is a disconnect → camera was connected at start.
+      const hbPresent = P.get(`Vision/${cam}/Heartbeat`).length >= 2;
+      const hasDat = hbPresent || camEvents.length > 0;
+      let connectedTime = 0;
+
+      // Uptime is always computed over the full log span (not the view window),
+      // so enabled-only / period filters don't hide pre-match disconnects.
+      const hbFull = P.get(`Vision/${cam}/Heartbeat`);
+      const spanStart = hbFull.length ? hbFull[0].ts : (camEvents.length ? camEvents[0].ts : minT);
+      const spanEnd   = hbFull.length ? hbFull[hbFull.length - 1].ts : (camEvents.length ? camEvents[camEvents.length - 1].ts : maxT);
+      const spanDur   = spanEnd - spanStart;
+
+      // Initial state: first event being a connect → camera started disconnected
+      let curState = camEvents.length > 0 && isConnEvt(camEvents[0].msg) ? 'disconnected' : 'connected';
+      let disconnectedTime = 0;
+      let disconnStart = curState === 'disconnected' ? spanStart : null;
+
+      for (const ev of camEvents) {
+        if (ev.ts < spanStart || ev.ts > spanEnd) continue;
+        const t = ev.ts;
+        if (curState === 'disconnected' && isConnEvt(ev.msg)) {
+          disconnectedTime += t - disconnStart;
+          curState = 'connected';
+          disconnStart = null;
+        } else if (curState === 'connected' && isDisconnEvt(ev.msg)) {
+          curState = 'disconnected';
+          disconnStart = t;
+        }
+      }
+      if (curState === 'disconnected' && disconnStart !== null) disconnectedTime += spanEnd - disconnStart;
+
+      connectedTime = Math.max(0, spanDur - disconnectedTime);
+
+      // Build connected intervals list for intersection with enabled/disabled windows
+      const connIntervals = [];
+      {
+        let s2 = camEvents.length > 0 && isConnEvt(camEvents[0].msg) ? null : spanStart;
+        let st2 = s2 !== null ? 'connected' : 'disconnected';
+        for (const ev of camEvents) {
+          if (ev.ts < spanStart || ev.ts > spanEnd) continue;
+          if (st2 === 'disconnected' && isConnEvt(ev.msg))  { st2 = 'connected';    s2 = ev.ts; }
+          else if (st2 === 'connected' && isDisconnEvt(ev.msg)) { connIntervals.push([s2, ev.ts]); st2 = 'disconnected'; s2 = null; }
+        }
+        if (st2 === 'connected' && s2 !== null) connIntervals.push([s2, spanEnd]);
+      }
+
+      // Build enabled/disabled intervals from DS:enabled over the span
+      const enabledIvs = [], disabledIvs = [];
+      {
+        const dsEn = P.get('DS:enabled');
+        let eStart = null;
+        let prevTs = spanStart, prevVal = false;
+        for (const { ts, val } of dsEn) {
+          if (ts < spanStart) { prevVal = val; continue; }
+          if (ts > spanEnd) break;
+          if (prevVal && !val) enabledIvs.push([Math.max(eStart ?? spanStart, spanStart), ts]);
+          if (!prevVal && val) eStart = ts;
+          prevVal = val; prevTs = ts;
+        }
+        if (prevVal && eStart !== null) enabledIvs.push([Math.max(eStart, spanStart), spanEnd]);
+        // Disabled = inverse of enabled within span
+        let pos = spanStart;
+        for (const [s, e] of enabledIvs) { if (s > pos) disabledIvs.push([pos, s]); pos = e; }
+        if (pos < spanEnd) disabledIvs.push([pos, spanEnd]);
+      }
+
+      function ivIntersect(aIvs, bIvs) {
+        let t = 0;
+        for (const [a0, a1] of aIvs) for (const [b0, b1] of bIvs) { const s = Math.max(a0,b0), e = Math.min(a1,b1); if (e>s) t+=e-s; }
+        return t;
+      }
+      function ivTotal(ivs) { return ivs.reduce((s,[a,b])=>s+(b-a),0); }
+
+      const enabledDur  = ivTotal(enabledIvs);
+      const disabledDur = ivTotal(disabledIvs);
+      const connEnabled  = ivIntersect(connIntervals, enabledIvs);
+      const connDisabled = ivIntersect(connIntervals, disabledIvs);
+      const pctEnabled  = enabledDur  > 0 ? Math.min(connEnabled  / enabledDur  * 100, 100) : null;
+      const pctDisabled = disabledDur > 0 ? Math.min(connDisabled / disabledDur * 100, 100) : null;
+
+      const pct = spanDur > 0 && hasDat ? Math.min(connectedTime / spanDur * 100, 100) : null;
+      return { cam, color: CAM_COLORS[ci], disconnects, pct, pctEnabled, pctDisabled, hasDat, evtCount: camEvents.length, connSec: connectedTime, spanDur };
+    });
+
+    // KPI tiles
+    const kpiRow = document.createElement('div');
+    kpiRow.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px';
+    for (const k of camKpis) {
+      const shortName = k.cam.replace('limelight-', '');
+      const tile = document.createElement('div');
+      tile.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:6px;padding:8px 14px;min-width:130px';
+      const pctStr = k.hasDat ? `${k.pct.toFixed(1)}%` : '—';
+      const pctColor = !k.hasDat ? '#64748b' : k.pct >= 95 ? '#22c55e' : k.pct >= 75 ? '#f59e0b' : '#ef4444';
+      function pctPill(label, val) {
+        if (val === null) return `<span style="color:#475569;font-size:11px">${label}: —</span>`;
+        const col = val >= 95 ? '#22c55e' : val >= 75 ? '#f59e0b' : '#ef4444';
+        return `<span style="font-size:11px"><span style="color:#64748b">${label}:</span> <span style="color:${col};font-weight:600">${val.toFixed(1)}%</span></span>`;
+      }
+      tile.innerHTML =
+        `<div style="color:${k.color};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">${shortName}</div>` +
+        `<div style="display:flex;gap:16px;align-items:baseline;margin-bottom:4px">` +
+          `<span>` +
+            `<span style="font-size:18px;font-weight:700;color:#e2e8f0">${k.hasDat ? k.disconnects : '—'}</span>` +
+            `<span style="font-size:10px;color:#64748b;margin-left:3px">disconnects</span>` +
+          `</span>` +
+          `<span>` +
+            `<span style="font-size:18px;font-weight:700;color:${pctColor}">${pctStr}</span>` +
+            `<span style="font-size:10px;color:#64748b;margin-left:2px">overall</span>` +
+          `</span>` +
+        `</div>` +
+        `<div style="display:flex;gap:10px;flex-wrap:wrap">` +
+          pctPill('enabled', k.pctEnabled) +
+          pctPill('disabled', k.pctDisabled) +
+        `</div>` +
+        `<div style="font-size:10px;color:#475569;margin-top:4px">${k.evtCount} events (${k.connSec.toFixed(1)}s conn / ${k.spanDur.toFixed(1)}s total)</div>`;
+      kpiRow.appendChild(tile);
+    }
+    d.appendChild(kpiRow);
+
+    if (!events.length) {
+      const p = document.createElement('p');
+      p.style.cssText = 'color:#64748b;font-size:12px;margin:8px 0';
+      p.textContent = `No camera events found. Console samples found: ${consoleSamples.length} (keys tried: ${CONSOLE_KEYS.join(', ')}). Heartbeat series checked: ${CAMS.map(c => P.get('Vision/'+c+'/Heartbeat').length).join('/')} samples.`;
+      d.appendChild(p);
+      return;
+    }
+
+    const table = document.createElement('table');
+    table.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px';
+    table.innerHTML = `<thead><tr>
+      <th style="text-align:left;padding:4px 8px;color:#94a3b8;border-bottom:1px solid #334155;white-space:nowrap">Time</th>
+      <th style="text-align:left;padding:4px 8px;color:#94a3b8;border-bottom:1px solid #334155;white-space:nowrap">Camera</th>
+      <th style="text-align:left;padding:4px 8px;color:#94a3b8;border-bottom:1px solid #334155">Message</th>
+      <th style="text-align:left;padding:4px 8px;color:#94a3b8;border-bottom:1px solid #334155;white-space:nowrap">Source</th>
+    </tr></thead>`;
+    const tbody = document.createElement('tbody');
+    for (const ev of events) {
+      const ci = CAMS.indexOf(ev.cam);
+      const color = ci >= 0 ? CAM_COLORS[ci] : '#94a3b8';
+      const isDisconn = ev.msg.includes('disconnected') || ev.msg.includes('gap');
+      const isReconn  = ev.msg.includes('reconnected')  || ev.msg.includes('resumed');
+      const rowColor  = isDisconn ? '#ef4444' : isReconn ? '#22c55e' : '#e2e8f0';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="padding:3px 8px;color:#94a3b8;white-space:nowrap;font-variant-numeric:tabular-nums">${ev.ts.toFixed(2)}s</td>
+        <td style="padding:3px 8px;white-space:nowrap"><span style="color:${color}">${ev.cam ?? '—'}</span></td>
+        <td style="padding:3px 8px;color:${rowColor};word-break:break-word">${ev.msg}</td>
+        <td style="padding:3px 8px;color:#64748b;white-space:nowrap">${ev.source}</td>`;
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    d.appendChild(table);
+  });
+
+  // Global
+  section(panel, 'Global Vision', d => {
+    const megaTagMode = (() => {
+      const exact = P.get('Vision/MegaTag Mode');
+      if (exact.length) return exact;
+      const matches = P.match(/MegaTag.*Mode/i);
+      const raw = Object.values(matches)[0] ?? [];
+      return raw.map(s => ({
+        ts: s.ts,
+        val: typeof s.val === 'number' ? (s.val === 0 ? 'MEGATAG1' : 'MEGATAG2') : String(s.val)
+      }));
+    })();
+    const hasData     = P.get('Vision/Has Data');
+    const posX        = P.get('Vision/Pose X Component');
+    const posY        = P.get('Vision/Pose Y Component');
+    const posTheta    = P.get('Vision/Pose Theta (Degrees)');
+
+    if (megaTagMode.length) {
+      renderTimeline(d, [{ name: 'MegaTag Mode', segments: toSegments(megaTagMode, maxT),
+        colorFn: v => v === 'MEGATAG2' ? '#22c55e' : '#f97316' }], minT, maxT);
+    }
+    const CAM_COLORS_G = ['#3b82f6', '#22c55e', '#f97316'];
+    const CAMS_G = ['limelight-right', 'limelight-left', 'limelight-back'];
+    const perCamHasData = CAMS_G.map((cam, i) => ({ name: cam, samples: P.get(`Vision/${cam} Has Data`), color: CAM_COLORS_G[i] }));
+
+    // KPIs: has-data percentage total/enabled/disabled
+    {
+      function boolToIvs(samples) {
+        const ivs = []; let s0 = null;
+        for (const {ts, val} of samples) {
+          if (val && s0 === null) s0 = ts;
+          else if (!val && s0 !== null) { ivs.push([s0, ts]); s0 = null; }
+        }
+        if (s0 !== null && samples.length) ivs.push([s0, samples[samples.length-1].ts]);
+        return ivs;
+      }
+      function ivIntersect2(a, b) { let t=0; for(const[a0,a1]of a) for(const[b0,b1]of b){const s=Math.max(a0,b0),e=Math.min(a1,b1);if(e>s)t+=e-s;} return t; }
+      function ivTotal2(ivs) { return ivs.reduce((s,[a,b])=>s+(b-a),0); }
+
+      // Build enabled/disabled intervals over full log span
+      const enabledIvs2 = [], disabledIvs2 = [];
+      {
+        const dsEn = P.get('DS:enabled');
+        let eStart2 = null, prevVal2 = false;
+        for (const {ts, val} of dsEn) {
+          if (ts < minT || ts > maxT) { prevVal2 = val; continue; }
+          if (!prevVal2 && val) eStart2 = ts;
+          if (prevVal2 && !val && eStart2 !== null) { enabledIvs2.push([eStart2, ts]); eStart2 = null; }
+          prevVal2 = val;
+        }
+        if (prevVal2 && eStart2 !== null) enabledIvs2.push([eStart2, maxT]);
+        let pos2 = minT;
+        for (const [s,e] of enabledIvs2) { if (s>pos2) disabledIvs2.push([pos2,s]); pos2=e; }
+        if (pos2 < maxT) disabledIvs2.push([pos2, maxT]);
+      }
+
+      const totalDur    = maxT - minT;
+      const enabledDur2 = ivTotal2(enabledIvs2);
+      const disabledDur2= ivTotal2(disabledIvs2);
+
+      function hasDataKpi(samples) {
+        const ivs = boolToIvs(samples);
+        const tot  = totalDur    > 0 ? Math.min(ivTotal2(ivs)                        / totalDur     * 100, 100) : null;
+        const en   = enabledDur2 > 0 ? Math.min(ivIntersect2(ivs, enabledIvs2)       / enabledDur2  * 100, 100) : null;
+        const dis  = disabledDur2> 0 ? Math.min(ivIntersect2(ivs, disabledIvs2)      / disabledDur2 * 100, 100) : null;
+        return { tot, en, dis };
+      }
+
+      function hdPill(label, val) {
+        if (val === null) return `<span style="color:#475569;font-size:11px">${label}: —</span>`;
+        const col = val >= 95 ? '#22c55e' : val >= 75 ? '#f59e0b' : '#ef4444';
+        return `<span style="font-size:11px"><span style="color:#64748b">${label}:</span> <b style="color:${col}">${val.toFixed(1)}%</b></span>`;
+      }
+
+      const kpiRow2 = document.createElement('div');
+      kpiRow2.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px';
+
+      // Any-cam tile
+      if (hasData.length) {
+        const k = hasDataKpi(hasData);
+        const tile = document.createElement('div');
+        tile.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:6px;padding:8px 14px;min-width:130px';
+        tile.innerHTML =
+          `<div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">any camera</div>` +
+          `<div style="display:flex;gap:8px;flex-wrap:wrap">` +
+            hdPill('total', k.tot) + hdPill('enabled', k.en) + hdPill('disabled', k.dis) +
+          `</div>`;
+        kpiRow2.appendChild(tile);
+      }
+
+      // Per-camera tiles
+      for (const {name, samples, color} of perCamHasData) {
+        if (!samples.length) continue;
+        const k = hasDataKpi(samples);
+        const tile = document.createElement('div');
+        tile.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:6px;padding:8px 14px;min-width:130px';
+        const shortName = name.replace('limelight-', '');
+        tile.innerHTML =
+          `<div style="color:${color};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">${shortName}</div>` +
+          `<div style="display:flex;gap:8px;flex-wrap:wrap">` +
+            hdPill('total', k.tot) + hdPill('enabled', k.en) + hdPill('disabled', k.dis) +
+          `</div>`;
+        kpiRow2.appendChild(tile);
+      }
+
+      if (kpiRow2.children.length) d.appendChild(kpiRow2);
+    }
+
+    if (hasData.length || perCamHasData.some(c => c.samples.length)) {
+      const rows = [];
+      if (hasData.length) rows.push({ name: 'Has Data (any)', segments: toSegments(hasData), colorFn: v => v ? '#22c55e' : '#374151' });
+      for (const { name, samples, color } of perCamHasData) {
+        if (samples.length) rows.push({ name, segments: toSegments(samples), colorFn: v => v ? color : '#374151' });
+      }
+      renderTimeline(d, rows, minT, maxT);
+    }
+    if (posX.length || posY.length) {
+      const ds = [];
+      if (posX.length) ds.push(lineDataset('X (m)', toXY(posX), '#3b82f6'));
+      if (posY.length) ds.push(lineDataset('Y (m)', toXY(posY), '#22c55e'));
+      const h = document.createElement('h4'); h.textContent = 'Last Accepted Vision Pose — X / Y'; d.appendChild(h);
+      makeLineChart(d, ds, 'm');
+    }
+    if (posTheta.length) {
+      const h = document.createElement('h4'); h.textContent = 'Last Accepted Vision Pose — Heading'; d.appendChild(h);
+      makeLineChart(d, [lineDataset('θ (°)', toXY(posTheta), '#f97316')], '°');
+    }
+  });
+
+  // Per-camera
+  CAMS.forEach((cam, i) => {
+    section(panel, `Camera: ${cam}`, d => {
+      const prefix = `Vision/${cam}`;
+      const hasD   = P.get(`${prefix}/# Rejected Not Null`);
+      const notNull= P.get(`${prefix}/# Rejected Not Null`);
+      const rejArea= P.get(`${prefix}/# Rejected Target Area`);
+      const rejAngV= P.get(`${prefix}/# Rejected Angular Velocity`);
+      const rejPos = P.get(`${prefix}/# Rejected Invalid Position`);
+      const hb     = P.get(`${prefix}/Heartbeat`);
+      const pipe   = P.get(`${prefix}/Pipeline`);
+      const poseM1 = P.get(`${prefix}/Pose MT1`);
+      const poseM2 = P.get(`${prefix}/Pose MT2`);
+
+      const hasAny = notNull.length || rejArea.length || rejAngV.length || rejPos.length || hb.length;
+      if (!hasAny) return noData(d, `No data for ${cam}`);
+
+      // Rejection KPIs
+      if (notNull.length || rejArea.length || rejAngV.length || rejPos.length) {
+        const camHasDataSamples = P.get(`Vision/${cam} Has Data`);
+
+        // Build enabled/disabled intervals over full log span
+        const enIvs = [], disIvs = [];
+        {
+          const dsEn = P.get('DS:enabled');
+          let eStart = null, prev = false;
+          for (const {ts, val} of dsEn) {
+            if (!prev && val) eStart = ts;
+            if (prev && !val && eStart !== null) { enIvs.push([eStart, ts]); eStart = null; }
+            prev = val;
+          }
+          if (prev && eStart !== null) enIvs.push([eStart, maxT]);
+          let pos = minT;
+          for (const [s,e] of enIvs) { if (s>pos) disIvs.push([pos,s]); pos=e; }
+          if (pos < maxT) disIvs.push([pos, maxT]);
+        }
+
+        // Time-based: Has Data true intervals
+        function boolToIvsLocal(samples) {
+          const ivs = []; let s0 = null;
+          for (const {ts, val} of samples) {
+            if (val && s0 === null) s0 = ts;
+            else if (!val && s0 !== null) { ivs.push([s0, ts]); s0 = null; }
+          }
+          if (s0 !== null && samples.length) ivs.push([s0, samples[samples.length-1].ts]);
+          return ivs;
+        }
+        function ivIsect(a, b) { let t=0; for(const[a0,a1]of a) for(const[b0,b1]of b){const s=Math.max(a0,b0),e=Math.min(a1,b1);if(e>s)t+=e-s;} return t; }
+        function ivTot(ivs) { return ivs.reduce((s,[a,b])=>s+(b-a),0); }
+
+        const hasDataIvs = boolToIvsLocal(camHasDataSamples);
+        const enDur  = ivTot(enIvs);
+        const disDur = ivTot(disIvs);
+        const totDur = maxT - minT;
+        const enAcc  = ivIsect(hasDataIvs, enIvs);
+        const disAcc = ivIsect(hasDataIvs, disIvs);
+        const totAcc = ivTot(hasDataIvs);
+        const enPct  = enDur  > 0 ? Math.min(enAcc  / enDur  * 100, 100) : null;
+        const disPct = disDur > 0 ? Math.min(disAcc / disDur * 100, 100) : null;
+        const totPct = totDur > 0 ? Math.min(totAcc / totDur * 100, 100) : null;
+
+        // Cumulative counter delta within a set of intervals
+        function counterDeltaIn(samples, ivs) {
+          if (!samples.length) return 0;
+          let total = 0;
+          for (const [t0, t1] of ivs) {
+            let startVal = 0, endVal = 0;
+            for (const s of samples) { if (s.ts <= t0) startVal = s.val; else break; }
+            for (const s of samples) { if (s.ts <= t1) endVal   = s.val; }
+            total += Math.max(0, endVal - startVal);
+          }
+          return total;
+        }
+
+        const allIvs = [[minT, maxT]];
+        const rejCounts = (ivs) => ({
+          rNull: counterDeltaIn(notNull, ivs),
+          rArea: counterDeltaIn(rejArea, ivs),
+          rAngV: counterDeltaIn(rejAngV, ivs),
+          rPos:  counterDeltaIn(rejPos,  ivs),
+        });
+        const rcAll = rejCounts(allIvs);
+        const rcEn  = rejCounts(enIvs);
+
+        const rcDis = rejCounts(disIvs);
+        const totalRejAll = rcAll.rNull + rcAll.rArea + rcAll.rAngV + rcAll.rPos;
+
+        function kpiCard(color, label, bigVal, bigLabel, rows) {
+          const accentBorder = color ? `border-top: 3px solid ${color};` : '';
+          const rowsHtml = rows.map(([rl, rv]) =>
+            `<div style="display:flex;justify-content:space-between;gap:16px;margin-top:3px">` +
+              `<span style="font-size:10px;color:#64748b">${rl}</span>` +
+              `<span style="font-size:10px;color:#94a3b8;font-weight:500">${rv}</span>` +
+            `</div>`
+          ).join('');
+          return `<div style="background:#1e293b;border:1px solid #334155;${accentBorder}border-radius:6px;padding:10px 14px;min-width:110px;flex:1">` +
+            `<div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">${label}</div>` +
+            `<div style="font-size:22px;font-weight:700;color:${color ?? '#e2e8f0'};line-height:1">${bigVal}</div>` +
+            `<div style="font-size:10px;color:#475569;margin-bottom:6px">${bigLabel}</div>` +
+            rowsHtml +
+          `</div>`;
+        }
+
+        const fmtPct = v => v === null ? '—' : v.toFixed(1) + '%';
+        const fmtN   = n => n.toLocaleString();
+
+        function rejCard(label, color, enCount, totCount, disCount) {
+          const pctOfAll = totalRejAll > 0 ? (totCount / totalRejAll * 100).toFixed(0) + '%' : '—';
+          return kpiCard(color, label,
+            fmtN(enCount), `enabled · ${pctOfAll} of all rej`,
+            [['total', fmtN(totCount)], ['disabled', fmtN(disCount)]]
+          );
+        }
+
+        const kpiRow = document.createElement('div');
+        kpiRow.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px';
+        kpiRow.innerHTML =
+          kpiCard('#22c55e', 'Pose Accepted',
+            fmtPct(enPct), 'of enabled time',
+            [['total', fmtPct(totPct)], ['disabled', fmtPct(disPct)]]
+          ) +
+          rejCard('Null / No Tags',   '#94a3b8', rcEn.rNull, rcAll.rNull, rcDis.rNull) +
+          rejCard('Angular Velocity', '#f97316', rcEn.rAngV, rcAll.rAngV, rcDis.rAngV) +
+          rejCard('Invalid Position', '#ef4444', rcEn.rPos,  rcAll.rPos,  rcDis.rPos) +
+          (rcAll.rArea ? rejCard('Target Area', '#a855f7', rcEn.rArea, rcAll.rArea, rcDis.rArea) : '');
+        d.appendChild(kpiRow);
+
+        const h = document.createElement('h4'); h.textContent = 'Rejection Counters (cumulative)'; d.appendChild(h);
+        const ds = [];
+        if (notNull.length) ds.push(lineDataset('# Rej Not Null',    toXY(notNull), CAM_COLORS[i]));
+        if (rejArea.length) ds.push(lineDataset('# Rej Area',        toXY(rejArea), '#f59e0b'));
+        if (rejAngV.length) ds.push(lineDataset('# Rej Ang Velocity',toXY(rejAngV), '#ec4899'));
+        if (rejPos.length)  ds.push(lineDataset('# Rej Invalid Pos', toXY(rejPos),  '#ef4444'));
+        makeLineChart(d, ds, 'Cumulative Count');
+      }
+
+      // Heartbeat
+      if (hb.length) {
+        const h = document.createElement('h4'); h.textContent = 'Heartbeat'; d.appendChild(h);
+        makeLineChart(d, [lineDataset('Heartbeat', toXY(hb), CAM_COLORS[i])], '');
+      }
+
+      // Pipeline
+      if (pipe.length) {
+        const h = document.createElement('h4'); h.textContent = 'Pipeline (0=HIGH_SUN, 3=NO_SUN)'; d.appendChild(h);
+        makeLineChart(d, [lineDataset('Pipeline', toXY(pipe), '#8b5cf6', { stepped:'before' })], '');
+      }
+
+      // MT1 vs MT2 pose X
+      if (poseM1.length || poseM2.length) {
+        const h = document.createElement('h4'); h.textContent = 'Pose X: MT1 vs MT2'; d.appendChild(h);
+        const ds = [];
+        if (poseM1.length) ds.push(lineDataset('MT1 X (m)', toXY(poseM1, s => s.val && s.val.x != null ? s.val.x : null), '#3b82f6'));
+        if (poseM2.length) ds.push(lineDataset('MT2 X (m)', toXY(poseM2, s => s.val && s.val.x != null ? s.val.x : null), '#22c55e'));
+        const validDs = ds.filter(d => d.data.some(p => p.y !== null));
+        if (validDs.length) makeLineChart(d, validDs, 'm');
+        else noData(d, 'Pose MT1/MT2 values decoded but all null — struct may not be decoded correctly.');
+      }
+    });
+  });
+}
+
+// ================================================================
+// TAB 8: DIAGNOSTICS
+// ================================================================
+function renderDiagnostics(panel, P, minT, maxT) {
+  // CAN health
+  section(panel, 'CAN Health', d => {
+    const util = P.get('Swerve/CANBus Utiliaztion'); // typo preserved
+    const daq  = P.get('Swerve/Failed DAQ Count');
+    if (!util.length && !daq.length) return noData(d);
+    const ds = [];
+    if (util.length) ds.push(lineDataset('CAN Bus Utilization', toXY(util), '#3b82f6'));
+    if (daq.length)  ds.push(lineDataset('Failed DAQ Count',    toXY(daq),  '#ef4444'));
+    makeLineChart(d, ds, '');
+    const note = document.createElement('p'); note.style.fontSize = '11px'; note.style.color = '#64748b';
+    note.textContent = 'Note: key "CANBus Utiliaztion" preserves the typo from the source code.';
+    d.appendChild(note);
+  });
+
+  // Loop overrun from pose timestamps
+  section(panel, 'Loop Performance', d => {
+    const pose = P.get('Swerve/Pose');
+    if (pose.length < 2) return noData(d, 'Need Swerve/Pose samples to estimate loop timing.');
+
+    const gaps = [];
+    for (let i = 1; i < pose.length; i++) {
+      gaps.push({ ts: pose[i].ts, dt: pose[i].ts - pose[i-1].ts });
+    }
+    const overruns = gaps.filter(g => g.dt > 0.035);
+    const p = document.createElement('p');
+    p.innerHTML = `Total samples: <strong>${pose.length}</strong> &nbsp;|&nbsp; Gaps >35ms (overruns): <strong>${overruns.length}</strong> &nbsp;|&nbsp; Max gap: <strong>${Math.max(...gaps.map(g=>g.dt)).toFixed(3)}s</strong>`;
+    p.style.marginBottom = '12px'; p.style.fontSize = '13px';
+    d.appendChild(p);
+
+    const note = document.createElement('div'); note.className = 'info-box';
+    note.textContent = 'Loop time is estimated from successive Swerve/Pose timestamp deltas (logged at LOGGING_FREQUENCY=5, i.e., every 5th loop at ~10 Hz). Gaps >35ms suggest one or more 20ms loops were missed. See LOOP_OVERRUN_AUDIT.md for root-cause analysis.';
+    d.appendChild(note);
+
+    makeLineChart(d,
+      [lineDataset('Loop Δt (ms)', gaps.map(g => ({ x: g.ts, y: g.dt * 1000 })), '#3b82f6')],
+      'ms', { nom: hLine(100, '100ms nominal (10Hz log)', '#6b7280'), warn: hLine(200, '200ms (2-loop miss)', '#f59e0b') });
+
+    if (overruns.length) {
+      const tbl = document.createElement('table'); tbl.style.marginTop = '12px';
+      tbl.innerHTML = `<thead><tr><th>Time (s)</th><th>Gap (ms)</th></tr></thead><tbody>
+        ${overruns.slice(0,30).map(g => `<tr><td>${g.ts.toFixed(2)}</td><td>${(g.dt*1000).toFixed(0)}</td></tr>`).join('')}
+      </tbody>`;
+      d.appendChild(tbl);
+    }
+  });
+
+  // GC stats
+  section(panel, 'GC & CPU', d => {
+    const gcMs  = P.get('Robot/GC Time MS');
+    const gcCnt = P.get('Robot/GC Counts');
+    const gcSum = P.get('Robot/Sum of GC Time MS');
+    const cpu   = P.get('Robot/CPU Temperature (C)');
+    const totalI= P.get('Robot/Total Current Draw');
+
+    if (!gcMs.length && !cpu.length) return noData(d, 'GC/CPU keys not found (may require DEBUG_MODE).');
+
+    const ds = [];
+    if (gcMs.length)  ds.push(lineDataset('GC Time per loop (ms)',  toXY(gcMs),  '#f97316'));
+    if (gcSum.length) ds.push(lineDataset('Cumul GC Time (ms)',     toXY(gcSum), '#f59e0b'));
+    if (gcCnt.length) ds.push(lineDataset('GC Count per loop',       toXY(gcCnt), '#3b82f6'));
+    if (ds.length) makeLineChart(d, ds, '');
+
+    if (cpu.length) makeLineChart(d, [lineDataset('CPU Temp (°C)', toXY(cpu), '#ef4444')], '°C');
+    if (totalI.length) makeLineChart(d, [lineDataset('Total Current Draw (A)', toXY(totalI), '#8b5cf6')], 'A');
+  });
+
+  // CAN connectivity
+  section(panel, 'CAN Connectivity', d => {
+    const canKeys = Object.keys(P.match(/^Robot\/CAN\//));
+    if (!canKeys.length) return noData(d, 'No CAN connectivity keys. These are logged only in DEBUG_MODE while disabled and not FMS-attached.');
+
+    const rows = canKeys.map(key => {
+      const s = P.get(key);
+      const name = key.replace('Robot/CAN/', '').replace('/', ' › ');
+      return { name, segments: toSegments(s), colorFn: v => v ? '#22c55e' : '#ef4444' };
+    });
+    renderTimeline(d, rows, minT, maxT);
+    const note = document.createElement('div'); note.className = 'info-box';
+    note.textContent = 'Green = connected. Red = not connected. These keys are only emitted in DEBUG_MODE when the robot is disabled and FMS is not attached.';
+    d.appendChild(note);
+  });
+
+  // Robot global
+  section(panel, 'Robot Global Stats', d => {
+    const matchT = P.get('Robot/Match Time');
+    const battV  = P.get('Robot/Battery Voltage');
+    const ds = [];
+    if (matchT.length) ds.push(lineDataset('Match Time (s)', toXY(matchT), '#3b82f6'));
+    if (battV.length)  ds.push(lineDataset('Battery Voltage (V)', toXY(battV), '#22c55e'));
+    if (!ds.length) return noData(d);
+    makeLineChart(d, ds, '');
+  });
+
+}
+
+// ================================================================
+// SUBTAB HELPER
+// ================================================================
+function createSubtabs(parent, tabs) {
+  const bar = document.createElement('div'); bar.className = 'subtab-bar';
+  const panels = tabs.map((tab, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'subtab-btn' + (i === 0 ? ' active' : '');
+    btn.textContent = tab.label;
+    bar.appendChild(btn);
+    const pEl = document.createElement('div');
+    pEl.className = 'subtab-panel' + (i !== 0 ? ' hidden' : '');
+    return { btn, panel: pEl, render: tab.render, done: false };
+  });
+  parent.appendChild(bar);
+  panels.forEach(p => parent.appendChild(p.panel));
+
+  // Render first
+  panels[0].render(panels[0].panel);
+  panels[0].done = true;
+
+  const btns = bar.querySelectorAll('.subtab-btn');
+  panels.forEach((p, i) => {
+    btns[i].addEventListener('click', () => {
+      btns.forEach(b => b.classList.remove('active'));
+      btns[i].classList.add('active');
+      panels.forEach(pp => pp.panel.classList.add('hidden'));
+      p.panel.classList.remove('hidden');
+      if (!p.done) { p.render(p.panel); p.done = true; }
+    });
+  });
+}
+
+// ================================================================
+// MAIN TAB INIT
+// ================================================================
+function initTabs(P, fileName) {
+  const { minT, maxT } = getActiveTimeRange(P);
+
+  const tabDefs = [
+    { id: 'overview',      label: 'Overview',          render: renderOverview },
+    { id: 'superstructure',label: 'Superstructure',     render: renderSuperstructure },
+    { id: 'field',         label: 'Pose',               render: renderField },
+    { id: 'power',         label: 'Power / Energy',     render: renderPower },
+    { id: 'swerve',        label: 'Swerve',             render: renderSwerve },
+    { id: 'intake',        label: 'Intake & Handling',  render: renderIntakeHandling },
+    { id: 'vision',        label: 'Vision',             render: renderVision },
+    { id: 'diagnostics',   label: 'Diagnostics',        render: renderDiagnostics },
+  ];
+
+  // Compute disabled intervals from DS:enabled for timeline overlays
+  (function() {
+    const enabledS = P.get('DS:enabled');
+    const disabled = [];
+    let pos = minT;
+    for (let i = 0; i < enabledS.length; i++) {
+      if (enabledS[i].val) {
+        if (enabledS[i].ts > pos) disabled.push([pos, enabledS[i].ts]);
+        pos = i + 1 < enabledS.length ? enabledS[i+1].ts : maxT;
+      }
+    }
+    if (pos < maxT) disabled.push([pos, maxT]);
+    _disabledIntervals = disabled;
+  })();
+
+  const tabbar = document.getElementById('tabbar');
+  const panels = document.getElementById('panels');
+  tabbar.innerHTML = '';
+  panels.innerHTML = '';
+  _charts.length = 0;
+
+  const tabData = tabDefs.map((def, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn' + (i === 0 ? ' active' : '');
+    btn.textContent = def.label;
+    tabbar.appendChild(btn);
+
+    const pEl = document.createElement('div');
+    pEl.className = 'tab-panel' + (i !== 0 ? ' hidden' : '');
+    panels.appendChild(pEl);
+
+    return { btn, panel: pEl, render: def.render, done: false };
+  });
+
+  // Enabled-only toggle in tab bar
+  const spacer = document.createElement('div'); spacer.style.flex = '1';
+  tabbar.appendChild(spacer);
+  const enabledLbl = document.createElement('label');
+  enabledLbl.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;color:#64748b;padding:0 12px;cursor:pointer;white-space:nowrap;user-select:none';
+  const enabledCb = document.createElement('input');
+  enabledCb.type = 'checkbox'; enabledCb.checked = true;
+  enabledCb.addEventListener('change', () => {
+    document.body.classList.toggle('show-disabled', !enabledCb.checked);
+    for (const chart of _charts) chart.update('none');
+    document.dispatchEvent(new CustomEvent('enabled-only-change'));
+  });
+  enabledLbl.appendChild(enabledCb);
+  enabledLbl.appendChild(document.createTextNode('Enabled only'));
+  tabbar.appendChild(enabledLbl);
+
+  const TAB_KEY = 'tribecbot-active-tab';
+  const savedTab = parseInt(localStorage.getItem(TAB_KEY) || '0', 10);
+  const startIdx = (savedTab >= 0 && savedTab < tabData.length) ? savedTab : 0;
+
+  // Activate saved tab visually
+  tabData.forEach((td, i) => {
+    td.btn.classList.toggle('active', i === startIdx);
+    td.panel.classList.toggle('hidden', i !== startIdx);
+  });
+
+  // Render starting tab
+  tabData[startIdx].render(tabData[startIdx].panel, P, minT, maxT, fileName);
+  tabData[startIdx].done = true;
+
+  tabData.forEach((td, i) => {
+    td.btn.addEventListener('click', () => {
+      tabData.forEach(t => { t.btn.classList.remove('active'); t.panel.classList.add('hidden'); });
+      td.btn.classList.add('active');
+      td.panel.classList.remove('hidden');
+      localStorage.setItem(TAB_KEY, i);
+      if (!td.done) {
+        td.render(td.panel, P, minT, maxT, fileName);
+        td.done = true;
+      }
+    });
+  });
+}
+
+// ================================================================
+// SESSION PERSISTENCE (IndexedDB)
+// ================================================================
+const IDB_NAME = 'tribecbot-dashboard', IDB_STORE = 'last-log', IDB_KEY = 'file';
+
+function openIDB() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE);
+    req.onsuccess = e => res(e.target.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+
+async function saveToIDB(name, buffer) {
+  try {
+    const db = await openIDB();
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put({ name, buffer }, IDB_KEY);
+  } catch { /* non-fatal */ }
+}
+
+async function loadFromIDB() {
+  try {
+    const db = await openIDB();
+    return await new Promise((res, rej) => {
+      const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(IDB_KEY);
+      req.onsuccess = () => res(req.result || null);
+      req.onerror = () => rej(req.error);
+    });
+  } catch { return null; }
+}
+
+// On load, restore last file from IndexedDB
+loadFromIDB().then(saved => {
+  if (!saved) return;
+  let P;
+  try { P = new WPILOGParser().parse(saved.buffer); } catch { return; }
+  showDashboard(P, saved.name, /* skipSave */ true);
+});
+
+// ================================================================
+// FILE HANDLING
+// ================================================================
+function parseAndShow(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    let P;
+    try {
+      P = new WPILOGParser().parse(e.target.result);
+    } catch (err) {
+      alert('Failed to parse WPILOG: ' + err.message);
+      return;
+    }
+    saveToIDB(file.name, e.target.result);
+    showDashboard(P, file.name);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function showDashboard(P, fileName, skipSave = false) {
+  document.getElementById('hero').style.display = 'none';
+  const dash = document.getElementById('dashboard');
+  dash.style.display = 'block';
+  initTabs(P, fileName);
+  if (!skipSave) saveMatchHistory(P, fileName);
+}
+
+function showUpload() {
+  document.getElementById('hero').style.display = '';
+  document.getElementById('dashboard').style.display = 'none';
+}
+
+// ================================================================
+// DRAG & DROP
+// ================================================================
+const dropzone = document.getElementById('dropzone');
+dropzone.addEventListener('click', () => document.getElementById('file-input').click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault(); dropzone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) parseAndShow(file);
+});
+
+document.getElementById('file-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) parseAndShow(file);
+  e.target.value = '';
+});
+
+// Drag on full page
+document.body.addEventListener('dragover', e => e.preventDefault());
+document.body.addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (file && file.name.endsWith('.wpilog')) parseAndShow(file);
+});
+
+// ================================================================
+// MATCH HISTORY (local storage)
+// ================================================================
+const HISTORY_KEY = 'tribecbot_match_history';
+
+function saveMatchHistory(P, fileName) {
+  const { minT, maxT } = getTimeRange(P);
+  const battV = P.get('Robot/Battery Voltage');
+  const energy = P.get('EnergyUtil/Total Used Energy Watt Hours');
+  const curr = P.get('EnergyUtil/Total current Current');
+
+  const entry = {
+    fileName,
+    date: new Date().toISOString(),
+    duration: +(maxT - minT).toFixed(1),
+    minBattV: +(minVal(battV) ?? 0).toFixed(2),
+    totalWh:  +(lastVal(energy) ?? 0).toFixed(2),
+    peakCurr: +(peakVal(curr)  ?? 0).toFixed(0),
+  };
+
+  try {
+    const hist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    hist.unshift(entry);
+    if (hist.length > 20) hist.splice(20);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
+  } catch {}
+}
+
+function deleteHistoryEntry(index) {
+  try {
+    const hist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    hist.splice(index, 1);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
+    renderHistory();
+  } catch {}
+}
+
+function clearHistory() {
+  localStorage.removeItem(HISTORY_KEY);
+  renderHistory();
+}
+
+function renderHistory() {
+  const list = document.getElementById('history-list');
+  if (!list) return;
+  const section = list.parentElement;
+  try {
+    const hist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    section.querySelector('.history-header')?.remove();
+    if (!hist.length) { list.innerHTML = ''; return; }
+    const header = document.createElement('div'); header.className = 'history-header';
+    header.innerHTML = '<h3>Recent Logs</h3>';
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'btn-clear-hist';
+    clearBtn.textContent = 'Clear All';
+    clearBtn.onclick = clearHistory;
+    header.appendChild(clearBtn);
+    section.insertBefore(header, list);
+    list.innerHTML = hist.map((e, i) =>
+      `<div class="history-card" title="${e.fileName}">
+        <button class="hc-del" onclick="event.stopPropagation();deleteHistoryEntry(${i})" title="Delete">✕</button>
+        <div class="hc-name">${e.fileName}</div>
+        <div class="hc-meta">${new Date(e.date).toLocaleString()} · ${e.duration}s · ${e.minBattV}V · ${e.totalWh}Wh · ${e.peakCurr}A pk</div>
+      </div>`
+    ).join('');
+  } catch {}
+}
+
+renderHistory();
+</script>
+</body>
+</html>
