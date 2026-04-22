@@ -108,11 +108,23 @@ tr:hover td{background:var(--surface2)}
 .history-header h3{font-size:13px;font-weight:700;color:var(--muted);margin:0}
 .btn-clear-hist{background:none;border:1px solid var(--border);color:#6b4040;font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer}
 .btn-clear-hist:hover{border-color:#ef4444;color:#ef4444}
+.match-badge{display:inline-block;padding:1px 7px;border-radius:9px;font-size:10px;font-weight:700;margin-right:5px;letter-spacing:.03em}
+.badge-Q{background:rgba(34,197,94,.2);color:#22c55e}
+.badge-P{background:rgba(251,191,36,.2);color:#fbbf24}
+.badge-E{background:rgba(239,68,68,.2);color:#ef4444}
+.badge-home{background:rgba(168,144,144,.15);color:#a89090}
+.cloud-group{margin-bottom:18px}
+.cloud-group-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+.cloud-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px}
+#cloud-section{margin-top:28px;width:100%;max-width:900px}
+.cloud-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.cloud-header h3{font-size:13px;font-weight:700;color:var(--muted);margin:0}
+#cloud-status{font-size:11px;color:var(--muted);margin-top:6px;font-style:italic}
 </style>
 </head>
 <body>
 <header>
-  <h1>Tribecbot Dashboard</h1>
+  <h1 style="cursor:pointer" onclick="showUpload()">Tribecbot Dashboard</h1>
   <span class="badge">DogLog · 2026 Rebuilt</span>
   <a href="https://github.com/brunoUC/tempest-dashboard" target="_blank" rel="noopener" style="font-size:11px;color:var(--muted);text-decoration:none;margin-left:auto;margin-right:8px;white-space:nowrap">based on tempest-dashboard</a>
   <button class="btn btn-primary" id="btn-upload" onclick="document.getElementById('file-input').click()">+ Load .wpilog</button>
@@ -128,8 +140,16 @@ tr:hover td{background:var(--surface2)}
       <p><strong>Drag &amp; drop a .wpilog here</strong></p>
       <p>or click to browse</p>
     </div>
-    <div id="history-section">
-      <div id="history-list"></div>
+    <div id="cloud-section" style="display:none">
+      <div class="history-header">
+        <h3 style="font-size:13px;font-weight:700;color:var(--muted);margin:0">☁ Cloud History</h3>
+        <div style="display:flex;gap:6px">
+          <button class="btn" id="btn-cloud-refresh" style="font-size:11px;padding:3px 10px">↻ Refresh</button>
+          <button class="btn-clear-hist" onclick="cloudDeleteAll()">Clear All</button>
+        </div>
+      </div>
+      <div id="cloud-status"></div>
+      <div id="cloud-list"></div>
     </div>
   </div>
 
@@ -145,7 +165,173 @@ tr:hover td{background:var(--surface2)}
 // ================================================================
 // CONFIGURATION
 // ================================================================
-const FIREBASE_CONFIG = null; // Set to a Firebase config object to enable cloud sync
+// { url: 'https://xxx.supabase.co', anonKey: 'eyJ...' }
+const SUPABASE_CONFIG = {
+  url: 'https://liczayzjwoujfkordswl.supabase.co',
+  anonKey: 'sb_publishable_778cW-pfqKHyI0CGB5OcEg_3M7yKtfb', // safe to commit — anon key, access controlled by Supabase RLS
+};
+
+// ================================================================
+// SUPABASE (lazy-loaded — never imported when SUPABASE_CONFIG=null)
+// Storage bucket: 'logs' (public). DB table: 'logs'.
+// ================================================================
+let _sb = null;
+
+async function getSupabase() {
+  if (!SUPABASE_CONFIG) return null;
+  if (_sb) return _sb;
+  try {
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+    _sb = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+    return _sb;
+  } catch (e) {
+    console.warn('Supabase unavailable:', e);
+    return null;
+  }
+}
+
+function parseWpilogName(filename) {
+  const m = filename.match(/^FRC_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})(?:_([A-Z0-9]+)_([PQE])(\d+))?\.wpilog$/i);
+  if (!m) return { date: null, time: null, event: null, match_type: null, match_num: null };
+  const [, yr, mo, dy, hr, min, sec, event, matchType, matchNumStr] = m;
+  return {
+    date:       `${yr}-${mo}-${dy}`,
+    time:       `${hr}:${min}:${sec}`,
+    event:      event || null,
+    match_type: matchType ? matchType.toUpperCase() : null,
+    match_num:  matchNumStr ? parseInt(matchNumStr) : null,
+  };
+}
+
+let _currentFile = null; // holds the File object of the currently-viewed log
+
+async function cloudUpload(file, P) {
+  try {
+    const sb = await getSupabase();
+    if (!sb) throw new Error('Supabase not configured');
+
+    const meta = parseWpilogName(file.name);
+    const { minT, maxT } = getTimeRange(P);
+    const battV    = P.get('Robot/Battery Voltage');
+    const energy   = P.get('EnergyUtil/Total Used Energy Watt Hours');
+    const curr     = P.get('EnergyUtil/Total current Current');
+    const sotmTimer = P.get('Superstructure/SOTM Stopped Timer');
+    const fotmTimer = P.get('Superstructure/FOTM Stopped Timer');
+    const stateS   = P.get('Superstructure/State');
+
+    function stoppedPct(timerSamples, stateName) {
+      const peak = peakVal(timerSamples);
+      if (peak === null || !stateS.length) return null;
+      let dur = 0;
+      for (let i = 0; i < stateS.length; i++) {
+        if (stateS[i].val === stateName)
+          dur += (i + 1 < stateS.length ? stateS[i+1].ts : maxT) - stateS[i].ts;
+      }
+      return dur === 0 ? null : +Math.min(peak / dur * 100, 100).toFixed(1);
+    }
+
+    // Upload file to Storage (upsert)
+    const { error: storageErr } = await sb.storage.from('logs').upload(file.name, file, { upsert: true });
+    if (storageErr) throw storageErr;
+
+    // Upsert metadata row
+    const { error: dbErr } = await sb.from('logs').upsert({
+      filename:          file.name,
+      ...meta,
+      duration:          +(maxT - minT).toFixed(1),
+      min_batt_v:        +(minVal(battV)  ?? 0).toFixed(2),
+      total_wh:          +(lastVal(energy) ?? 0).toFixed(2),
+      peak_curr:         +(peakVal(curr)  ?? 0).toFixed(0),
+      sotm_stopped_pct:  stoppedPct(sotmTimer, 'SOTM'),
+      fotm_stopped_pct:  stoppedPct(fotmTimer, 'FOTM'),
+    }, { onConflict: 'filename' });
+    if (dbErr) throw dbErr;
+
+    renderCloudHistory();
+  } catch (e) {
+    console.error('Cloud upload failed:', e);
+  }
+}
+
+async function loadFromCloud(filename) {
+  try {
+    const sb = await getSupabase();
+    if (!sb) throw new Error('Supabase not configured');
+    const { data, error } = await sb.storage.from('logs').download(filename);
+    if (error) throw error;
+    const buf = await data.arrayBuffer();
+    parseAndShow(new File([buf], filename, { type: 'application/octet-stream' }));
+  } catch (e) {
+    alert('Failed to load from cloud: ' + e.message);
+  }
+}
+
+let _cloudRenderTimer = null;
+function renderCloudHistory() {
+  clearTimeout(_cloudRenderTimer);
+  _cloudRenderTimer = setTimeout(_doRenderCloudHistory, 150);
+}
+
+async function _doRenderCloudHistory() {
+  if (!SUPABASE_CONFIG) return;
+  const list = document.getElementById('cloud-list');
+  const status = document.getElementById('cloud-status');
+  if (!list) return;
+  list.innerHTML = '';
+  if (status) status.textContent = 'Loading…';
+  try {
+    const sb = await getSupabase();
+    if (!sb) { if (status) status.textContent = 'Supabase unavailable.'; return; }
+    const { data: docs, error } = await sb.from('logs').select('*').order('uploaded_at', { ascending: false });
+    if (error) throw error;
+    if (status) status.textContent = '';
+    if (!docs.length) { list.innerHTML = '<p style="font-size:12px;color:var(--muted);font-style:italic">No logs uploaded yet.</p>'; return; }
+
+    // Group by event
+    const groups = new Map();
+    for (const d of docs) {
+      const key = d.event || '__home__';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(d);
+    }
+
+    const matchOrder = { Q: 0, P: 1, E: 2 };
+    for (const [key, items] of groups) {
+      items.sort((a, b) => {
+        if (a.match_type !== b.match_type) return (matchOrder[a.match_type] ?? 9) - (matchOrder[b.match_type] ?? 9);
+        return (a.match_num ?? 0) - (b.match_num ?? 0);
+      });
+
+      const groupEl = document.createElement('div'); groupEl.className = 'cloud-group';
+      const label = document.createElement('div'); label.className = 'cloud-group-label';
+      label.textContent = key === '__home__' ? 'Home / Practice' : key;
+      groupEl.appendChild(label);
+
+      const grid = document.createElement('div'); grid.className = 'cloud-grid';
+      for (const d of items) {
+        const badge = d.match_type
+          ? `<span class="match-badge badge-${d.match_type}">${d.match_type}${d.match_num ?? ''}</span>`
+          : `<span class="match-badge badge-home">Home</span>`;
+        const dateStr = d.date ? `${d.date} ${d.time || ''}`.trim() : '';
+        const sotmStr = d.sotm_stopped_pct != null ? ` · SOTM ${d.sotm_stopped_pct}% stopped` : '';
+        const fotmStr = d.fotm_stopped_pct != null ? ` · FOTM ${d.fotm_stopped_pct}% stopped` : '';
+        const card = document.createElement('div'); card.className = 'history-card';
+        card.title = `${d.filename} — click to load`;
+        card.innerHTML = `<button class="hc-del" title="Delete">✕</button>
+          <div class="hc-name">${badge}${d.filename}</div>
+          <div class="hc-meta">${dateStr} · ${d.duration ?? '?'}s · ${d.min_batt_v ?? '?'}V · ${d.total_wh ?? '?'}Wh${sotmStr}${fotmStr}</div>`;
+        card.querySelector('.hc-del').onclick = e => { e.stopPropagation(); cloudDeleteFile(d.filename); };
+        card.onclick = () => loadFromCloud(d.filename);
+        grid.appendChild(card);
+      }
+      groupEl.appendChild(grid);
+      list.appendChild(groupEl);
+    }
+  } catch (e) {
+    console.error('Cloud history load failed:', e);
+    if (status) status.textContent = 'Failed to load cloud history.';
+  }
+}
 
 // ================================================================
 // FIELD CONSTANTS (from Field.java, in meters)
@@ -3082,7 +3268,7 @@ async function loadFromIDB() {
 
 // On load, restore last file from IndexedDB
 loadFromIDB().then(saved => {
-  if (!saved) return;
+  if (!saved || !sessionStorage.getItem('dashboard_active')) return;
   let P;
   try { P = new WPILOGParser().parse(saved.buffer); } catch { return; }
   showDashboard(P, saved.name, /* skipSave */ true);
@@ -3101,6 +3287,7 @@ function parseAndShow(file) {
       alert('Failed to parse WPILOG: ' + err.message);
       return;
     }
+    _currentFile = file;
     saveToIDB(file.name, e.target.result);
     showDashboard(P, file.name);
   };
@@ -3108,14 +3295,16 @@ function parseAndShow(file) {
 }
 
 function showDashboard(P, fileName, skipSave = false) {
+  sessionStorage.setItem('dashboard_active', '1');
   document.getElementById('hero').style.display = 'none';
   const dash = document.getElementById('dashboard');
   dash.style.display = 'block';
   initTabs(P, fileName);
-  if (!skipSave) saveMatchHistory(P, fileName);
+  if (!skipSave && SUPABASE_CONFIG && _currentFile) cloudUpload(_currentFile, P);
 }
 
 function showUpload() {
+  sessionStorage.removeItem('dashboard_active');
   document.getElementById('hero').style.display = '';
   document.getElementById('dashboard').style.display = 'none';
 }
@@ -3148,74 +3337,33 @@ document.body.addEventListener('drop', e => {
 });
 
 // ================================================================
-// MATCH HISTORY (local storage)
+// CLOUD DELETE
 // ================================================================
-const HISTORY_KEY = 'tribecbot_match_history';
-
-function saveMatchHistory(P, fileName) {
-  const { minT, maxT } = getTimeRange(P);
-  const battV = P.get('Robot/Battery Voltage');
-  const energy = P.get('EnergyUtil/Total Used Energy Watt Hours');
-  const curr = P.get('EnergyUtil/Total current Current');
-
-  const entry = {
-    fileName,
-    date: new Date().toISOString(),
-    duration: +(maxT - minT).toFixed(1),
-    minBattV: +(minVal(battV) ?? 0).toFixed(2),
-    totalWh:  +(lastVal(energy) ?? 0).toFixed(2),
-    peakCurr: +(peakVal(curr)  ?? 0).toFixed(0),
-  };
-
-  try {
-    const hist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-    hist.unshift(entry);
-    if (hist.length > 20) hist.splice(20);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
-  } catch {}
+async function cloudDeleteFile(filename) {
+  const sb = await getSupabase();
+  if (!sb) return;
+  await sb.storage.from('logs').remove([filename]);
+  await sb.from('logs').delete().eq('filename', filename);
+  renderCloudHistory();
 }
 
-function deleteHistoryEntry(index) {
-  try {
-    const hist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-    hist.splice(index, 1);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
-    renderHistory();
-  } catch {}
+async function cloudDeleteAll() {
+  const sb = await getSupabase();
+  if (!sb) return;
+  const { data: files } = await sb.storage.from('logs').list();
+  if (files?.length) await sb.storage.from('logs').remove(files.map(f => f.name));
+  await sb.from('logs').delete().neq('filename', '');
+  renderCloudHistory();
 }
 
-function clearHistory() {
-  localStorage.removeItem(HISTORY_KEY);
-  renderHistory();
-}
 
-function renderHistory() {
-  const list = document.getElementById('history-list');
-  if (!list) return;
-  const section = list.parentElement;
-  try {
-    const hist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-    section.querySelector('.history-header')?.remove();
-    if (!hist.length) { list.innerHTML = ''; return; }
-    const header = document.createElement('div'); header.className = 'history-header';
-    header.innerHTML = '<h3>Recent Logs</h3>';
-    const clearBtn = document.createElement('button');
-    clearBtn.className = 'btn-clear-hist';
-    clearBtn.textContent = 'Clear All';
-    clearBtn.onclick = clearHistory;
-    header.appendChild(clearBtn);
-    section.insertBefore(header, list);
-    list.innerHTML = hist.map((e, i) =>
-      `<div class="history-card" title="${e.fileName}">
-        <button class="hc-del" onclick="event.stopPropagation();deleteHistoryEntry(${i})" title="Delete">✕</button>
-        <div class="hc-name">${e.fileName}</div>
-        <div class="hc-meta">${new Date(e.date).toLocaleString()} · ${e.duration}s · ${e.minBattV}V · ${e.totalWh}Wh · ${e.peakCurr}A pk</div>
-      </div>`
-    ).join('');
-  } catch {}
+// Cloud history init
+if (SUPABASE_CONFIG) {
+  const cs = document.getElementById('cloud-section');
+  if (cs) cs.style.display = '';
+  document.getElementById('btn-cloud-refresh')?.addEventListener('click', renderCloudHistory);
+  renderCloudHistory();
 }
-
-renderHistory();
 </script>
 </body>
 </html>
