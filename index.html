@@ -120,16 +120,52 @@ tr:hover td{background:var(--surface2)}
 .cloud-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .cloud-header h3{font-size:13px;font-weight:700;color:var(--muted);margin:0}
 #cloud-status{font-size:11px;color:var(--muted);margin-top:6px;font-style:italic}
+.cloud-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:500;overflow-y:auto;padding:40px 20px}
+.cloud-modal-overlay.open{display:block}
+.cloud-modal{max-width:720px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;position:relative}
+.modal-dropzone{border:2px dashed var(--border);border-radius:10px;padding:32px;text-align:center;cursor:pointer;transition:.2s;margin-bottom:0}
+.modal-dropzone:hover,.modal-dropzone.drag-over{border-color:var(--accent);background:rgba(239,68,68,.06)}
+.modal-dropzone svg{color:var(--muted);margin-bottom:10px}
+.modal-dropzone p{color:var(--muted);font-size:13px;margin:4px 0}
+.modal-dropzone strong{color:var(--text)}
+.modal-cloud-divider{text-align:center;font-size:12px;color:var(--muted);margin:20px 0 16px;letter-spacing:.04em}
+.cloud-modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.cloud-modal-header h2{font-size:15px;font-weight:700;margin:0}
+.cloud-modal-close{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;padding:2px 6px;border-radius:4px}
+.cloud-modal-close:hover{color:var(--text);background:var(--surface2)}
 </style>
 </head>
 <body>
 <header>
-  <h1 style="cursor:pointer" onclick="showUpload()">Tribecbot Dashboard</h1>
+  <h1 style="cursor:pointer;display:flex;align-items:center;gap:8px" onclick="showUpload()">
+    <img src="https://cad.onshape.com/api/thumbnails/d/2b44ae58b051bc8b70f03c29/w/dc0349c9235eaa882ae4b5e8/s/600x340"
+         alt="Tribecbot" style="height:30px;width:auto;border-radius:4px;display:block">
+    Tribecbot Dashboard
+  </h1>
   <span class="badge">DogLog · 2026 Rebuilt</span>
   <a href="https://github.com/brunoUC/tempest-dashboard" target="_blank" rel="noopener" style="font-size:11px;color:var(--muted);text-decoration:none;margin-left:auto;margin-right:8px;white-space:nowrap">based on tempest-dashboard</a>
-  <button class="btn btn-primary" id="btn-upload" onclick="document.getElementById('file-input').click()">+ Load .wpilog</button>
+  <button class="btn btn-primary" onclick="openLoadModal()">+ Load .wpilog</button>
   <input type="file" id="file-input" accept=".wpilog">
 </header>
+
+<div class="cloud-modal-overlay" id="cloud-modal">
+  <div class="cloud-modal">
+    <div class="cloud-modal-header">
+      <h2>Load Log</h2>
+      <button class="cloud-modal-close" onclick="closeLoadModal()">✕</button>
+    </div>
+    <div id="modal-dropzone" class="modal-dropzone">
+      <svg width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5v-9m0 0-3.75 3.75M12 7.5l3.75 3.75M3 15.75v1.5A2.25 2.25 0 0 0 5.25 19.5h13.5A2.25 2.25 0 0 0 21 17.25v-1.5"/></svg>
+      <p><strong>Drag &amp; drop a .wpilog here</strong></p>
+      <p>or <span style="color:var(--accent);text-decoration:underline;cursor:pointer" onclick="document.getElementById('file-input').click()">click to browse</span></p>
+    </div>
+    <div id="modal-cloud-section" style="display:none">
+      <div class="modal-cloud-divider">— or load from cloud —</div>
+      <div id="cloud-modal-status"></div>
+      <div id="cloud-modal-list"></div>
+    </div>
+  </div>
+</div>
 
 <main>
   <div id="hero">
@@ -211,7 +247,7 @@ async function cloudUpload(file, P) {
     if (!sb) throw new Error('Supabase not configured');
 
     const meta = parseWpilogName(file.name);
-    const { minT, maxT } = getTimeRange(P);
+    const { minT, maxT } = getActiveTimeRange(P);
     const battV    = P.get('Robot/Battery Voltage');
     const energy   = P.get('EnergyUtil/Total Used Energy Watt Hours');
     const curr     = P.get('EnergyUtil/Total current Current');
@@ -221,21 +257,25 @@ async function cloudUpload(file, P) {
 
     function stoppedPct(timerSamples, stateName) {
       const peak = peakVal(timerSamples);
-      if (peak === null || !stateS.length) return null;
+      if (peak === null || peak <= 0 || !stateS.length) return 0;
       let dur = 0;
       for (let i = 0; i < stateS.length; i++) {
-        if (stateS[i].val === stateName)
-          dur += (i + 1 < stateS.length ? stateS[i+1].ts : maxT) - stateS[i].ts;
+        if (stateS[i].val === stateName) {
+          const s = Math.max(stateS[i].ts, minT);
+          const e = Math.min(i + 1 < stateS.length ? stateS[i+1].ts : maxT, maxT);
+          dur += Math.max(0, e - s);
+        }
       }
-      return dur === 0 ? null : +Math.min(peak / dur * 100, 100).toFixed(1);
+      return dur === 0 ? null : +Math.max(0, Math.min(peak / dur * 100, 100)).toFixed(1);
     }
 
     // Upload file to Storage (upsert)
     const { error: storageErr } = await sb.storage.from('logs').upload(file.name, file, { upsert: true });
     if (storageErr) throw storageErr;
 
-    // Upsert metadata row
-    const { error: dbErr } = await sb.from('logs').upsert({
+    // Delete existing row then insert fresh — avoids needing UPDATE RLS policy
+    await sb.from('logs').delete().eq('filename', file.name);
+    const { error: dbErr } = await sb.from('logs').insert({
       filename:          file.name,
       ...meta,
       duration:          +(maxT - minT).toFixed(1),
@@ -244,7 +284,7 @@ async function cloudUpload(file, P) {
       peak_curr:         +(peakVal(curr)  ?? 0).toFixed(0),
       sotm_stopped_pct:  stoppedPct(sotmTimer, 'SOTM'),
       fotm_stopped_pct:  stoppedPct(fotmTimer, 'FOTM'),
-    }, { onConflict: 'filename' });
+    });
     if (dbErr) throw dbErr;
 
     renderCloudHistory();
@@ -272,66 +312,107 @@ function renderCloudHistory() {
   _cloudRenderTimer = setTimeout(_doRenderCloudHistory, 150);
 }
 
-async function _doRenderCloudHistory() {
-  if (!SUPABASE_CONFIG) return;
-  const list = document.getElementById('cloud-list');
-  const status = document.getElementById('cloud-status');
+async function _renderCloudInto(list, status, onCardClick) {
   if (!list) return;
   list.innerHTML = '';
   if (status) status.textContent = 'Loading…';
-  try {
-    const sb = await getSupabase();
-    if (!sb) { if (status) status.textContent = 'Supabase unavailable.'; return; }
-    const { data: docs, error } = await sb.from('logs').select('*').order('uploaded_at', { ascending: false });
-    if (error) throw error;
-    if (status) status.textContent = '';
-    if (!docs.length) { list.innerHTML = '<p style="font-size:12px;color:var(--muted);font-style:italic">No logs uploaded yet.</p>'; return; }
+  const sb = await getSupabase();
+  if (!sb) { if (status) status.textContent = 'Supabase unavailable.'; return; }
+  const { data: docs, error } = await sb.from('logs').select('*').order('uploaded_at', { ascending: false });
+  if (error) throw error;
+  if (status) status.textContent = '';
+  if (!docs.length) { list.innerHTML = '<p style="font-size:12px;color:var(--muted);font-style:italic">No logs uploaded yet.</p>'; return; }
 
-    // Group by event
-    const groups = new Map();
-    for (const d of docs) {
-      const key = d.event || '__home__';
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(d);
+  const groups = new Map();
+  for (const d of docs) {
+    const key = d.event || '__home__';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(d);
+  }
+
+  const matchOrder = { Q: 0, P: 1, E: 2 };
+  for (const [key, items] of groups) {
+    items.sort((a, b) => {
+      if (a.match_type !== b.match_type) return (matchOrder[a.match_type] ?? 9) - (matchOrder[b.match_type] ?? 9);
+      return (a.match_num ?? 0) - (b.match_num ?? 0);
+    });
+
+    const groupEl = document.createElement('div'); groupEl.className = 'cloud-group';
+    const label = document.createElement('div'); label.className = 'cloud-group-label';
+    label.textContent = key === '__home__' ? 'Home / Practice' : key;
+    groupEl.appendChild(label);
+
+    const grid = document.createElement('div'); grid.className = 'cloud-grid';
+    for (const d of items) {
+      const badge = d.match_type
+        ? `<span class="match-badge badge-${d.match_type}">${d.match_type}${d.match_num ?? ''}</span>`
+        : `<span class="match-badge badge-home">Home</span>`;
+      const dateStr = d.date ? `${d.date} ${d.time || ''}`.trim() : '';
+      const sotmStr = ` · SOTM ${d.sotm_stopped_pct != null ? d.sotm_stopped_pct + '% stopped' : 'N/A'}`;
+      const fotmStr = ` · FOTM ${d.fotm_stopped_pct != null ? d.fotm_stopped_pct + '% stopped' : 'N/A'}`;
+      const card = document.createElement('div'); card.className = 'history-card';
+      card.title = `${d.filename} — click to load`;
+      card.innerHTML = `<button class="hc-del" title="Delete">✕</button>
+        <div class="hc-name">${badge}${d.filename}</div>
+        <div class="hc-meta">${dateStr} · ${d.duration ?? '?'}s · ${d.min_batt_v ?? '?'}V · ${d.total_wh ?? '?'}Wh${sotmStr}${fotmStr}</div>`;
+      card.querySelector('.hc-del').onclick = e => { e.stopPropagation(); cloudDeleteFile(d.filename); };
+      card.onclick = () => onCardClick(d.filename);
+      grid.appendChild(card);
     }
-
-    const matchOrder = { Q: 0, P: 1, E: 2 };
-    for (const [key, items] of groups) {
-      items.sort((a, b) => {
-        if (a.match_type !== b.match_type) return (matchOrder[a.match_type] ?? 9) - (matchOrder[b.match_type] ?? 9);
-        return (a.match_num ?? 0) - (b.match_num ?? 0);
-      });
-
-      const groupEl = document.createElement('div'); groupEl.className = 'cloud-group';
-      const label = document.createElement('div'); label.className = 'cloud-group-label';
-      label.textContent = key === '__home__' ? 'Home / Practice' : key;
-      groupEl.appendChild(label);
-
-      const grid = document.createElement('div'); grid.className = 'cloud-grid';
-      for (const d of items) {
-        const badge = d.match_type
-          ? `<span class="match-badge badge-${d.match_type}">${d.match_type}${d.match_num ?? ''}</span>`
-          : `<span class="match-badge badge-home">Home</span>`;
-        const dateStr = d.date ? `${d.date} ${d.time || ''}`.trim() : '';
-        const sotmStr = d.sotm_stopped_pct != null ? ` · SOTM ${d.sotm_stopped_pct}% stopped` : '';
-        const fotmStr = d.fotm_stopped_pct != null ? ` · FOTM ${d.fotm_stopped_pct}% stopped` : '';
-        const card = document.createElement('div'); card.className = 'history-card';
-        card.title = `${d.filename} — click to load`;
-        card.innerHTML = `<button class="hc-del" title="Delete">✕</button>
-          <div class="hc-name">${badge}${d.filename}</div>
-          <div class="hc-meta">${dateStr} · ${d.duration ?? '?'}s · ${d.min_batt_v ?? '?'}V · ${d.total_wh ?? '?'}Wh${sotmStr}${fotmStr}</div>`;
-        card.querySelector('.hc-del').onclick = e => { e.stopPropagation(); cloudDeleteFile(d.filename); };
-        card.onclick = () => loadFromCloud(d.filename);
-        grid.appendChild(card);
-      }
-      groupEl.appendChild(grid);
-      list.appendChild(groupEl);
-    }
-  } catch (e) {
-    console.error('Cloud history load failed:', e);
-    if (status) status.textContent = 'Failed to load cloud history.';
+    groupEl.appendChild(grid);
+    list.appendChild(groupEl);
   }
 }
+
+async function _doRenderCloudHistory() {
+  if (!SUPABASE_CONFIG) return;
+  try {
+    await _renderCloudInto(
+      document.getElementById('cloud-list'),
+      document.getElementById('cloud-status'),
+      filename => loadFromCloud(filename)
+    );
+  } catch (e) {
+    console.error('Cloud history load failed:', e);
+    const s = document.getElementById('cloud-status');
+    if (s) s.textContent = 'Failed to load cloud history.';
+  }
+}
+
+async function openLoadModal() {
+  document.getElementById('cloud-modal').classList.add('open');
+  if (SUPABASE_CONFIG) {
+    document.getElementById('modal-cloud-section').style.display = '';
+    try {
+      await _renderCloudInto(
+        document.getElementById('cloud-modal-list'),
+        document.getElementById('cloud-modal-status'),
+        filename => { closeLoadModal(); loadFromCloud(filename); }
+      );
+    } catch (e) {
+      const s = document.getElementById('cloud-modal-status');
+      if (s) s.textContent = 'Failed to load cloud history.';
+    }
+  }
+}
+function closeLoadModal() {
+  document.getElementById('cloud-modal').classList.remove('open');
+}
+// wire up modal dropzone
+(function() {
+  const dz = document.getElementById('modal-dropzone');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) { closeLoadModal(); parseAndShow(file); }
+  });
+})();
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLoadModal(); });
+document.getElementById('cloud-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('cloud-modal')) closeLoadModal();
+});
 
 // ================================================================
 // FIELD CONSTANTS (from Field.java, in meters)
@@ -1013,13 +1094,14 @@ function renderOverview(panel, P, minT, maxT) {
     let stateDur = 0;
     for (let i = 0; i < stateS.length; i++) {
       if (stateS[i].val === stateName) {
-        const end = i + 1 < stateS.length ? stateS[i+1].ts : maxT;
-        stateDur += end - stateS[i].ts;
+        const s = Math.max(stateS[i].ts, minT);
+        const e = Math.min(i + 1 < stateS.length ? stateS[i+1].ts : maxT, maxT);
+        stateDur += Math.max(0, e - s);
       }
     }
     if (stateDur === 0) return null;
     const totalStopped = peakVal(timerSamples);
-    if (totalStopped === null) return null;
+    if (totalStopped === null || totalStopped <= 0) return 0;
     return Math.min(totalStopped / stateDur * 100, 100);
   }
   const sotmTimerS = P.get('Superstructure/SOTM Stopped Timer');
@@ -1067,10 +1149,9 @@ function renderOverview(panel, P, minT, maxT) {
     const intervals = [];
     for (let i = 0; i < stateS.length; i++) {
       if (stateS[i].val === targetState) {
-        intervals.push({
-          start: stateS[i].ts,
-          end: i + 1 < stateS.length ? stateS[i+1].ts : maxT,
-        });
+        const start = Math.max(stateS[i].ts, minT);
+        const end   = Math.min(i + 1 < stateS.length ? stateS[i+1].ts : maxT, maxT);
+        if (end > start) intervals.push({ start, end });
       }
     }
     if (!intervals.length) return [];
@@ -1478,21 +1559,26 @@ function renderSuperstructure(panel, P, minT, maxT) {
     const fotmTimerS2 = P.get('Superstructure/FOTM Stopped Timer');
     if (sotmTimerS2.length || fotmTimerS2.length) {
       section(d, 'SOTM / FOTM Stopped Timers', s => {
-        function localStoppedPct(timerSamples, stateName) {
-          const peak = peakVal(timerSamples);
-          if (peak === null || !stateS.length) return null;
+        function localStateStats(timerSamples, stateName) {
           let dur = 0;
           for (let i = 0; i < stateS.length; i++) {
             if (stateS[i].val === stateName) {
-              dur += (i + 1 < stateS.length ? stateS[i+1].ts : maxT) - stateS[i].ts;
+              const s = Math.max(stateS[i].ts, minT);
+              const e = Math.min(i + 1 < stateS.length ? stateS[i+1].ts : maxT, maxT);
+              dur += Math.max(0, e - s);
             }
           }
-          return dur === 0 ? null : Math.min(peak / dur * 100, 100);
+          const peak = peakVal(timerSamples);
+          const pct = (dur > 0 && peak !== null && peak > 0)
+            ? Math.max(0, Math.min(peak / dur * 100, 100)) : (dur > 0 ? 0 : null);
+          return { dur: dur > 0 ? dur : null, pct };
         }
-        const sp = localStoppedPct(sotmTimerS2, 'SOTM');
-        const fp = localStoppedPct(fotmTimerS2, 'FOTM');
+        const { dur: sotmDur, pct: sp } = localStateStats(sotmTimerS2, 'SOTM');
+        const { dur: fotmDur, pct: fp } = localStateStats(fotmTimerS2, 'FOTM');
         const stoppedColor = v => v === null ? undefined : v < 10 ? 'var(--green)' : v < 30 ? 'var(--yellow)' : 'var(--red)';
         kpis(s, [
+          { label: 'SOTM Time',      value: fmt(sotmDur, 1), unit: 's' },
+          { label: 'FOTM Time',      value: fmt(fotmDur, 1), unit: 's' },
           { label: 'SOTM Stopped %', value: fmt(sp, 1), unit: '%', valueColor: stoppedColor(sp) },
           { label: 'FOTM Stopped %', value: fmt(fp, 1), unit: '%', valueColor: stoppedColor(fp) },
         ]);
@@ -3195,9 +3281,12 @@ function initTabs(P, fileName) {
   const enabledLbl = document.createElement('label');
   enabledLbl.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;color:#64748b;padding:0 12px;cursor:pointer;white-space:nowrap;user-select:none';
   const enabledCb = document.createElement('input');
-  enabledCb.type = 'checkbox'; enabledCb.checked = true;
+  enabledCb.type = 'checkbox';
+  enabledCb.checked = localStorage.getItem('tribecbot-enabled-only') !== 'false';
+  document.body.classList.toggle('show-disabled', !enabledCb.checked);
   enabledCb.addEventListener('change', () => {
     document.body.classList.toggle('show-disabled', !enabledCb.checked);
+    localStorage.setItem('tribecbot-enabled-only', enabledCb.checked);
     for (const chart of _charts) chart.update('none');
     document.dispatchEvent(new CustomEvent('enabled-only-change'));
   });
@@ -3324,7 +3413,7 @@ dropzone.addEventListener('drop', e => {
 
 document.getElementById('file-input').addEventListener('change', e => {
   const file = e.target.files[0];
-  if (file) parseAndShow(file);
+  if (file) { closeLoadModal(); parseAndShow(file); }
   e.target.value = '';
 });
 
