@@ -11,25 +11,25 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0f172a;--surface:#1e293b;--surface2:#263548;--border:#334155;
-  --text:#e2e8f0;--muted:#94a3b8;--accent:#3b82f6;--green:#22c55e;
+  --bg:#0f0a0a;--surface:#1e1010;--surface2:#2a1818;--border:#3d2525;
+  --text:#f0e8e8;--muted:#a89090;--accent:#ef4444;--green:#22c55e;
   --red:#ef4444;--yellow:#f59e0b;--orange:#f97316;
 }
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;font-size:14px}
 header{display:flex;align-items:center;gap:12px;padding:10px 20px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
 header h1{font-size:16px;font-weight:700;color:var(--text)}
-header .badge{font-size:11px;padding:2px 7px;border-radius:9px;background:#0f4c81;color:#90c8f8;font-weight:600}
+header .badge{font-size:11px;padding:2px 7px;border-radius:9px;background:#5c0a0a;color:#fca5a5;font-weight:600}
 .btn{padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px}
 .btn:hover{background:var(--border)}
 .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.btn-primary:hover{background:#2563eb}
+.btn-primary:hover{background:#dc2626}
 #btn-upload{margin-left:auto}
 main{padding:0}
 #hero{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:16px;text-align:center;padding:40px 20px}
 #hero h2{font-size:28px;font-weight:700}
 #hero p{color:var(--muted);max-width:500px}
 #dropzone{max-width:480px;margin:0 auto;border:2px dashed var(--border);border-radius:12px;padding:40px;text-align:center;cursor:pointer;transition:.2s}
-#dropzone:hover,#dropzone.drag-over{border-color:var(--accent);background:rgba(59,130,246,.06)}
+#dropzone:hover,#dropzone.drag-over{border-color:var(--accent);background:rgba(239,68,68,.06)}
 #dropzone svg{color:var(--muted);margin-bottom:12px}
 #dropzone p{color:var(--muted);font-size:13px}
 #dropzone strong{color:var(--text)}
@@ -66,19 +66,19 @@ main{padding:0}
 body.show-disabled .disabled-overlay{display:none}
 .timeline-axis{display:flex;justify-content:space-between;margin-left:168px;font-size:10px;color:var(--muted);margin-top:2px}
 .no-data{color:var(--muted);font-style:italic;font-size:13px;padding:16px 0}
-.info-box{background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.3);border-radius:6px;padding:10px 14px;font-size:12px;color:#90c8f8;margin-bottom:12px}
-.warn-box{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:10px 14px;font-size:12px;color:#fca5a5;margin-bottom:12px}
+.info-box{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:10px 14px;font-size:12px;color:#fca5a5;margin-bottom:12px}
+.warn-box{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);border-radius:6px;padding:10px 14px;font-size:12px;color:#fca5a5;margin-bottom:12px}
 .oob-list{margin-top:12px;max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:6px}
-.pose-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-variant-numeric:tabular-nums;background:#1e293b;border:1px solid #334155;color:#94a3b8;white-space:nowrap}
-.pose-pill .pill-label{color:#475569;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+.pose-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-variant-numeric:tabular-nums;background:var(--surface);border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+.pose-pill .pill-label{color:#6b4040;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
 .pose-pill.oob{background:#431407;border-color:#f97316;color:#f97316;font-weight:600}
 .oob-row{display:flex;align-items:center;gap:10px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;cursor:pointer}
 .oob-row:last-child{border-bottom:none}
-.oob-row:hover{background:#1e293b}
+.oob-row:hover{background:var(--surface2)}
 .oob-row .oob-ts{color:#f97316;font-variant-numeric:tabular-nums;min-width:52px}
-.oob-row .oob-src{color:#94a3b8;min-width:120px}
-.oob-row .oob-pos{color:#64748b;flex:1}
-.oob-row .oob-jump{margin-left:auto;background:none;border:1px solid var(--border);color:#94a3b8;font-size:11px;padding:2px 7px;border-radius:4px;cursor:pointer}
+.oob-row .oob-src{color:var(--muted);min-width:120px}
+.oob-row .oob-pos{color:#6b4040;flex:1}
+.oob-row .oob-jump{margin-left:auto;background:none;border:1px solid var(--border);color:var(--muted);font-size:11px;padding:2px 7px;border-radius:4px;cursor:pointer}
 .oob-row .oob-jump:hover{border-color:var(--accent);color:var(--accent)}
 .legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
 .legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
@@ -102,11 +102,11 @@ tr:hover td{background:var(--surface2)}
 .history-card:hover{border-color:var(--accent)}
 .history-card .hc-name{font-weight:600;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:22px}
 .history-card .hc-meta{color:var(--muted)}
-.hc-del{position:absolute;top:8px;right:8px;background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;border-radius:4px}
-.hc-del:hover{color:#ef4444;background:#1e293b}
+.hc-del{position:absolute;top:8px;right:8px;background:none;border:none;color:#6b4040;cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;border-radius:4px}
+.hc-del:hover{color:#ef4444;background:var(--surface2)}
 .history-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-.history-header h3{font-size:13px;font-weight:700;color:#64748b;margin:0}
-.btn-clear-hist{background:none;border:1px solid var(--border);color:#64748b;font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer}
+.history-header h3{font-size:13px;font-weight:700;color:var(--muted);margin:0}
+.btn-clear-hist{background:none;border:1px solid var(--border);color:#6b4040;font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer}
 .btn-clear-hist:hover{border-color:#ef4444;color:#ef4444}
 </style>
 </head>
@@ -227,7 +227,7 @@ const COLORS = {
     REVERSE:'#ef4444', INTAKE_STOW:'#6b7280', INTAKE_DEPLOYED:'#22c55e',
   },
 };
-function sc(map, val){ return map[val] ?? '#94a3b8'; }
+function sc(map, val){ return map[val] ?? '#a89090'; }
 
 function stateLegend(container, samples, colorMap) {
   const seen = [...new Set(samples.map(s => s.val))];
@@ -521,7 +521,7 @@ function makeLineChart(container, datasets, yLabel = '', annotations = {}, heigh
       animation: false, responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: datasets.length > 1, labels: { font: { size: 11 }, color: '#94a3b8' } },
+        legend: { display: datasets.length > 1, labels: { font: { size: 11 }, color: '#a89090' } },
         zoom: ZOOM_OPTS,
         annotation: { annotations },
         tooltip: {
@@ -565,7 +565,7 @@ function makeScatterChart(container, datasets, xLabel = 'Duration (s)', yLabel =
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { display: true, labels: { font: { size: 11 }, color: '#94a3b8' } },
+        legend: { display: true, labels: { font: { size: 11 }, color: '#a89090' } },
         annotation: { annotations },
       },
       scales: {
@@ -1196,15 +1196,15 @@ function renderField(panel, P, minT, maxT) {
         <label><input type="checkbox" id="show-vision" checked> Vision ghosts</label>
         <label><input type="checkbox" id="show-mt1" checked> MT1</label>
         <label><input type="checkbox" id="show-mt2" checked> MT2</label>
-        <select id="cam-select" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:4px;padding:2px 6px;font-size:12px">
+        <select id="cam-select" style="background:#1e1010;color:#a89090;border:1px solid #3d2525;border-radius:4px;padding:2px 6px;font-size:12px">
           <option value="all">All cameras</option>
           <option value="limelight-right">Right</option>
           <option value="limelight-left">Left</option>
           <option value="limelight-back">Back</option>
         </select>
-        <select id="period-select" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:4px;padding:2px 6px;font-size:12px"></select>
+        <select id="period-select" style="background:#1e1010;color:#a89090;border:1px solid #3d2525;border-radius:4px;padding:2px 6px;font-size:12px"></select>
         <input type="range" id="time-slider" min="0" max="1000" value="0" style="flex:1;min-width:200px">
-        <span id="time-label" style="font-size:12px;color:#94a3b8;width:60px">—</span>
+        <span id="time-label" style="font-size:12px;color:#a89090;width:60px">—</span>
         <button class="btn" id="field-play-btn">▶ Play</button>
       </div>
       <div id="pose-readout" style="display:flex;gap:6px;align-items:center;padding:4px 0 8px;flex-wrap:wrap"></div>
@@ -1324,7 +1324,7 @@ function renderField(panel, P, minT, maxT) {
   function drawSchematic() {
     ctx.fillStyle = '#1a3a2a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = '#334155';
+    ctx.strokeStyle = '#3d2525';
     ctx.lineWidth = 1;
     ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
   }
@@ -1349,7 +1349,7 @@ function renderField(panel, P, minT, maxT) {
     ferryZones.forEach(([fx, fy], i) => {
       const [cx, cy] = toCanvas(fx, fy);
       circle(cx, cy, 6, '#8b5cf6', '#8b5cf644');
-      ctx.fillStyle = '#94a3b8'; ctx.font = '9px system-ui'; ctx.fillText(ferryNames[i], cx + 7, cy + 3);
+      ctx.fillStyle = '#a89090'; ctx.font = '9px system-ui'; ctx.fillText(ferryNames[i], cx + 7, cy + 3);
     });
 
     // Tower
@@ -1547,13 +1547,13 @@ function renderField(panel, P, minT, maxT) {
   filterCb.type = 'checkbox'; filterCb.id = 'oob-filter-zero'; filterCb.checked = true;
   const filterLbl = document.createElement('label');
   filterLbl.htmlFor = 'oob-filter-zero';
-  filterLbl.style.cssText = 'font-size:12px;color:#94a3b8;cursor:pointer';
+  filterLbl.style.cssText = 'font-size:12px;color:#a89090;cursor:pointer';
   filterLbl.textContent = 'Hide (0, 0) poses';
   ctrlRow.appendChild(filterCb); ctrlRow.appendChild(filterLbl);
   sec.appendChild(ctrlRow);
 
   const oobHdr  = document.createElement('h4');
-  oobHdr.style.cssText = 'margin:10px 0 6px;font-size:13px;color:#94a3b8';
+  oobHdr.style.cssText = 'margin:10px 0 6px;font-size:13px;color:#a89090';
   sec.appendChild(oobHdr);
   const oobList = document.createElement('div'); oobList.className = 'oob-list';
   sec.appendChild(oobList);
@@ -1727,7 +1727,7 @@ function renderPower(panel, P, minT, maxT) {
           datasets: [{
             data: finalVals.map(f => f.val),
             backgroundColor: finalVals.map(f => f.color),
-            borderColor: '#0f172a',
+            borderColor: '#0f0a0a',
             borderWidth: 1,
           }],
         },
@@ -1801,7 +1801,7 @@ function renderPower(panel, P, minT, maxT) {
       // Toggle: mean vs peak Y axis
       let useMean = true;
       const toggleRow = document.createElement('div');
-      toggleRow.style.cssText = 'display:flex;gap:12px;align-items:center;margin-bottom:8px;font-size:12px;color:#94a3b8';
+      toggleRow.style.cssText = 'display:flex;gap:12px;align-items:center;margin-bottom:8px;font-size:12px;color:#a89090';
       toggleRow.innerHTML = `<span>Y axis:</span>
         <label style="cursor:pointer"><input type="radio" name="trip-y" value="mean" checked> Mean</label>
         <label style="cursor:pointer"><input type="radio" name="trip-y" value="peak"> Peak</label>`;
@@ -1862,7 +1862,7 @@ function renderPower(panel, P, minT, maxT) {
         tbl.appendChild(tbody);
 
         const pgRow = document.createElement('div');
-        pgRow.style.cssText = 'display:flex;align-items:center;gap:10px;margin-top:6px;font-size:12px;color:#94a3b8';
+        pgRow.style.cssText = 'display:flex;align-items:center;gap:10px;margin-top:6px;font-size:12px;color:#a89090';
         const prevBtn = document.createElement('button'); prevBtn.className = 'btn'; prevBtn.textContent = '← Prev';
         const nextBtn = document.createElement('button'); nextBtn.className = 'btn'; nextBtn.textContent = 'Next →';
         const pgLabel = document.createElement('span');
@@ -2288,7 +2288,7 @@ function renderVision(panel, P, minT, maxT) {
     for (const k of camKpis) {
       const shortName = k.cam.replace('limelight-', '');
       const tile = document.createElement('div');
-      tile.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:6px;padding:8px 14px;min-width:130px';
+      tile.style.cssText = 'background:#1e1010;border:1px solid #3d2525;border-radius:6px;padding:8px 14px;min-width:130px';
       const pctStr = k.hasDat ? `${k.pct.toFixed(1)}%` : '—';
       const pctColor = !k.hasDat ? '#64748b' : k.pct >= 95 ? '#22c55e' : k.pct >= 75 ? '#f59e0b' : '#ef4444';
       function pctPill(label, val) {
@@ -2328,21 +2328,21 @@ function renderVision(panel, P, minT, maxT) {
     const table = document.createElement('table');
     table.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px';
     table.innerHTML = `<thead><tr>
-      <th style="text-align:left;padding:4px 8px;color:#94a3b8;border-bottom:1px solid #334155;white-space:nowrap">Time</th>
-      <th style="text-align:left;padding:4px 8px;color:#94a3b8;border-bottom:1px solid #334155;white-space:nowrap">Camera</th>
-      <th style="text-align:left;padding:4px 8px;color:#94a3b8;border-bottom:1px solid #334155">Message</th>
-      <th style="text-align:left;padding:4px 8px;color:#94a3b8;border-bottom:1px solid #334155;white-space:nowrap">Source</th>
+      <th style="text-align:left;padding:4px 8px;color:#a89090;border-bottom:1px solid #3d2525;white-space:nowrap">Time</th>
+      <th style="text-align:left;padding:4px 8px;color:#a89090;border-bottom:1px solid #3d2525;white-space:nowrap">Camera</th>
+      <th style="text-align:left;padding:4px 8px;color:#a89090;border-bottom:1px solid #3d2525">Message</th>
+      <th style="text-align:left;padding:4px 8px;color:#a89090;border-bottom:1px solid #3d2525;white-space:nowrap">Source</th>
     </tr></thead>`;
     const tbody = document.createElement('tbody');
     for (const ev of events) {
       const ci = CAMS.indexOf(ev.cam);
-      const color = ci >= 0 ? CAM_COLORS[ci] : '#94a3b8';
+      const color = ci >= 0 ? CAM_COLORS[ci] : '#a89090';
       const isDisconn = ev.msg.includes('disconnected') || ev.msg.includes('gap');
       const isReconn  = ev.msg.includes('reconnected')  || ev.msg.includes('resumed');
       const rowColor  = isDisconn ? '#ef4444' : isReconn ? '#22c55e' : '#e2e8f0';
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td style="padding:3px 8px;color:#94a3b8;white-space:nowrap;font-variant-numeric:tabular-nums">${ev.ts.toFixed(2)}s</td>
+        <td style="padding:3px 8px;color:#a89090;white-space:nowrap;font-variant-numeric:tabular-nums">${ev.ts.toFixed(2)}s</td>
         <td style="padding:3px 8px;white-space:nowrap"><span style="color:${color}">${ev.cam ?? '—'}</span></td>
         <td style="padding:3px 8px;color:${rowColor};word-break:break-word">${ev.msg}</td>
         <td style="padding:3px 8px;color:#64748b;white-space:nowrap">${ev.source}</td>`;
@@ -2433,9 +2433,9 @@ function renderVision(panel, P, minT, maxT) {
       if (hasData.length) {
         const k = hasDataKpi(hasData);
         const tile = document.createElement('div');
-        tile.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:6px;padding:8px 14px;min-width:130px';
+        tile.style.cssText = 'background:#1e1010;border:1px solid #3d2525;border-radius:6px;padding:8px 14px;min-width:130px';
         tile.innerHTML =
-          `<div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">any camera</div>` +
+          `<div style="color:#a89090;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">any camera</div>` +
           `<div style="display:flex;gap:8px;flex-wrap:wrap">` +
             hdPill('total', k.tot) + hdPill('enabled', k.en) + hdPill('disabled', k.dis) +
           `</div>`;
@@ -2447,7 +2447,7 @@ function renderVision(panel, P, minT, maxT) {
         if (!samples.length) continue;
         const k = hasDataKpi(samples);
         const tile = document.createElement('div');
-        tile.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:6px;padding:8px 14px;min-width:130px';
+        tile.style.cssText = 'background:#1e1010;border:1px solid #3d2525;border-radius:6px;padding:8px 14px;min-width:130px';
         const shortName = name.replace('limelight-', '');
         tile.innerHTML =
           `<div style="color:${color};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">${shortName}</div>` +
@@ -2573,10 +2573,10 @@ function renderVision(panel, P, minT, maxT) {
           const rowsHtml = rows.map(([rl, rv]) =>
             `<div style="display:flex;justify-content:space-between;gap:16px;margin-top:3px">` +
               `<span style="font-size:10px;color:#64748b">${rl}</span>` +
-              `<span style="font-size:10px;color:#94a3b8;font-weight:500">${rv}</span>` +
+              `<span style="font-size:10px;color:#a89090;font-weight:500">${rv}</span>` +
             `</div>`
           ).join('');
-          return `<div style="background:#1e293b;border:1px solid #334155;${accentBorder}border-radius:6px;padding:10px 14px;min-width:110px;flex:1">` +
+          return `<div style="background:#1e1010;border:1px solid #3d2525;${accentBorder}border-radius:6px;padding:10px 14px;min-width:110px;flex:1">` +
             `<div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">${label}</div>` +
             `<div style="font-size:22px;font-weight:700;color:${color ?? '#e2e8f0'};line-height:1">${bigVal}</div>` +
             `<div style="font-size:10px;color:#475569;margin-bottom:6px">${bigLabel}</div>` +
@@ -2602,7 +2602,7 @@ function renderVision(panel, P, minT, maxT) {
             fmtPct(enPct), 'of enabled time',
             [['total', fmtPct(totPct)], ['disabled', fmtPct(disPct)]]
           ) +
-          rejCard('Null / No Tags',   '#94a3b8', rcEn.rNull, rcAll.rNull, rcDis.rNull) +
+          rejCard('Null / No Tags',   '#a89090', rcEn.rNull, rcAll.rNull, rcDis.rNull) +
           rejCard('Angular Velocity', '#f97316', rcEn.rAngV, rcAll.rAngV, rcDis.rAngV) +
           rejCard('Invalid Position', '#ef4444', rcEn.rPos,  rcAll.rPos,  rcDis.rPos) +
           (rcAll.rArea ? rejCard('Target Area', '#a855f7', rcEn.rArea, rcAll.rArea, rcDis.rArea) : '');
