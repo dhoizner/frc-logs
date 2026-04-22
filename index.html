@@ -821,14 +821,30 @@ function renderOverview(panel, P, minT, maxT) {
     }
   }
 
-  // Max values of SOTM/FOTM stopped timers
+  // % of SOTM/FOTM state time spent stopped (timer is cumulative elapsed; max = total stopped seconds)
+  function stoppedTimerPct(timerSamples, stateName) {
+    if (!timerSamples.length || !stateS.length) return null;
+    let stateDur = 0;
+    for (let i = 0; i < stateS.length; i++) {
+      if (stateS[i].val === stateName) {
+        const end = i + 1 < stateS.length ? stateS[i+1].ts : maxT;
+        stateDur += end - stateS[i].ts;
+      }
+    }
+    if (stateDur === 0) return null;
+    const totalStopped = peakVal(timerSamples);
+    if (totalStopped === null) return null;
+    return Math.min(totalStopped / stateDur * 100, 100);
+  }
   const sotmTimerS = P.get('Superstructure/SOTM Stopped Timer');
   const fotmTimerS = P.get('Superstructure/FOTM Stopped Timer');
-  const maxSotmTimer = peakVal(sotmTimerS);
-  const maxFotmTimer = peakVal(fotmTimerS);
+  const sotmStoppedPct = stoppedTimerPct(sotmTimerS, 'SOTM');
+  const fotmStoppedPct = stoppedTimerPct(fotmTimerS, 'FOTM');
 
   section(panel, 'Match Summary', d => {
     kpis(d, [
+      { label: 'SOTM Stopped %', value: fmt(sotmStoppedPct, 1), unit: '%', valueColor: sotmStoppedPct !== null ? (sotmStoppedPct < 10 ? 'var(--green)' : sotmStoppedPct < 30 ? 'var(--yellow)' : 'var(--red)') : undefined },
+      { label: 'FOTM Stopped %', value: fmt(fotmStoppedPct, 1), unit: '%', valueColor: fotmStoppedPct !== null ? (fotmStoppedPct < 10 ? 'var(--green)' : fotmStoppedPct < 30 ? 'var(--yellow)' : 'var(--red)') : undefined },
       { label: 'Starting Battery V',  value: fmt(battV.length ? battV[0].val : null, 2), unit: 'V' },
       { label: 'Min Battery Voltage', value: fmt(minVal(battV), 1), unit: 'V' },
       { label: 'Total Energy Used',   value: fmt(lastVal(energyWh), 2), unit: 'Wh' },
@@ -841,8 +857,6 @@ function renderOverview(panel, P, minT, maxT) {
       { label: 'FOTM Ready %',          value: fmt(fotmFreePct,     1), unit: '%', valueColor: readyColor(fotmFreePct) },
       { label: 'Mean SOTM Startup',     value: fmt(sotmMeanLatency, 2), unit: 's' },
       { label: 'Max SOTM Startup',      value: fmt(sotmMaxLatency,  2), unit: 's' },
-      { label: 'SOTM Stopped', value: fmt(maxSotmTimer, 2), unit: 's' },
-      { label: 'FOTM Stopped', value: fmt(maxFotmTimer, 2), unit: 's' },
       { label: 'Shooter Ready % (active)',     value: fmt(shooterReadyPct, 1), unit: '%', valueColor: readyColor(shooterReadyPct) },
       { label: 'Hood Ready % (active)',        value: fmt(hoodReadyPct,    1), unit: '%', valueColor: readyColor(hoodReadyPct)    },
       { label: 'Turret Ready % (active)',      value: fmt(turretReadyPct,  1), unit: '%', valueColor: readyColor(turretReadyPct)  },
@@ -1278,6 +1292,24 @@ function renderSuperstructure(panel, P, minT, maxT) {
     const fotmTimerS2 = P.get('Superstructure/FOTM Stopped Timer');
     if (sotmTimerS2.length || fotmTimerS2.length) {
       section(d, 'SOTM / FOTM Stopped Timers', s => {
+        function localStoppedPct(timerSamples, stateName) {
+          const peak = peakVal(timerSamples);
+          if (peak === null || !stateS.length) return null;
+          let dur = 0;
+          for (let i = 0; i < stateS.length; i++) {
+            if (stateS[i].val === stateName) {
+              dur += (i + 1 < stateS.length ? stateS[i+1].ts : maxT) - stateS[i].ts;
+            }
+          }
+          return dur === 0 ? null : Math.min(peak / dur * 100, 100);
+        }
+        const sp = localStoppedPct(sotmTimerS2, 'SOTM');
+        const fp = localStoppedPct(fotmTimerS2, 'FOTM');
+        const stoppedColor = v => v === null ? undefined : v < 10 ? 'var(--green)' : v < 30 ? 'var(--yellow)' : 'var(--red)';
+        kpis(s, [
+          { label: 'SOTM Stopped %', value: fmt(sp, 1), unit: '%', valueColor: stoppedColor(sp) },
+          { label: 'FOTM Stopped %', value: fmt(fp, 1), unit: '%', valueColor: stoppedColor(fp) },
+        ]);
         const ds = [];
         if (sotmTimerS2.length) ds.push(lineDataset('SOTM Stopped', toXY(sotmTimerS2), '#f97316'));
         if (fotmTimerS2.length) ds.push(lineDataset('FOTM Stopped', toXY(fotmTimerS2), '#ec4899'));
