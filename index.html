@@ -23,7 +23,7 @@ header .badge{font-size:11px;padding:2px 7px;border-radius:9px;background:#5c0a0
 .btn:hover{background:var(--border)}
 .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .btn-primary:hover{background:#dc2626}
-#btn-upload{margin-left:auto}
+#btn-upload{}
 main{padding:0}
 #hero{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:16px;text-align:center;padding:40px 20px}
 #hero h2{font-size:28px;font-weight:700}
@@ -114,6 +114,7 @@ tr:hover td{background:var(--surface2)}
 <header>
   <h1>Tribecbot Dashboard</h1>
   <span class="badge">DogLog · 2026 Rebuilt</span>
+  <a href="https://github.com/brunoUC/tempest-dashboard" target="_blank" rel="noopener" style="font-size:11px;color:var(--muted);text-decoration:none;margin-left:auto;margin-right:8px;white-space:nowrap">based on tempest-dashboard</a>
   <button class="btn btn-primary" id="btn-upload" onclick="document.getElementById('file-input').click()">+ Load .wpilog</button>
   <input type="file" id="file-input" accept=".wpilog">
 </header>
