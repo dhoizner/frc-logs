@@ -100,10 +100,12 @@ tr:hover td{background:var(--surface2)}
 #history-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:10px}
 .history-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;cursor:pointer;position:relative}
 .history-card:hover{border-color:var(--accent)}
-.history-card .hc-name{font-weight:600;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:22px}
+.history-card .hc-name{font-weight:600;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:46px}
 .history-card .hc-meta{color:var(--muted)}
 .hc-del{position:absolute;top:8px;right:8px;background:none;border:none;color:#6b4040;cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;border-radius:4px}
 .hc-del:hover{color:#ef4444;background:var(--surface2)}
+.hc-dl{position:absolute;top:8px;right:30px;background:none;border:none;color:#6b4040;cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;border-radius:4px}
+.hc-dl:hover{color:#60a5fa;background:var(--surface2)}
 .history-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .history-header h3{font-size:13px;font-weight:700;color:var(--muted);margin:0}
 .btn-clear-hist{background:none;border:1px solid var(--border);color:#6b4040;font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer}
@@ -371,9 +373,10 @@ async function _renderCloudInto(list, status, onCardClick) {
       const fotmStr = ` · FOTM ${d.fotm_stopped_pct != null ? d.fotm_stopped_pct + '% stopped' : 'N/A'}`;
       const card = document.createElement('div'); card.className = 'history-card';
       card.title = `${d.filename} — click to load`;
-      card.innerHTML = `<button class="hc-del" title="Delete">✕</button>
+      card.innerHTML = `<button class="hc-dl" title="Download">↓</button><button class="hc-del" title="Delete">✕</button>
         <div class="hc-name">${badge}${d.filename}</div>
         <div class="hc-meta">${dateStr} · ${d.duration ?? '?'}s · ${d.min_batt_v ?? '?'}V · ${d.total_wh ?? '?'}Wh${sotmStr}${fotmStr}</div>`;
+      card.querySelector('.hc-dl').onclick = e => { e.stopPropagation(); cloudDownloadFile(d.filename); };
       card.querySelector('.hc-del').onclick = e => { e.stopPropagation(); cloudDeleteFile(d.filename); };
       card.onclick = () => onCardClick(d.filename);
       grid.appendChild(card);
@@ -3457,6 +3460,20 @@ document.body.addEventListener('drop', e => {
   const file = e.dataTransfer.files[0];
   if (file && file.name.endsWith('.wpilog')) parseAndShow(file);
 });
+
+// ================================================================
+// CLOUD DOWNLOAD
+// ================================================================
+async function cloudDownloadFile(filename) {
+  const sb = await getSupabase();
+  if (!sb) return;
+  const { data } = await sb.storage.from('logs').createSignedUrl(filename, 60, { download: true });
+  if (!data?.signedUrl) return;
+  const a = document.createElement('a');
+  a.href = data.signedUrl;
+  a.download = filename;
+  a.click();
+}
 
 // ================================================================
 // CLOUD DELETE
