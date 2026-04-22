@@ -332,8 +332,17 @@ async function _renderCloudInto(list, status, onCardClick) {
     groups.get(key).push(d);
   }
 
+  // Sort groups: home first, then events by their earliest log date ascending
+  const sortedGroups = [...groups.entries()].sort(([ka, ia], [kb, ib]) => {
+    if (ka === '__home__') return -1;
+    if (kb === '__home__') return 1;
+    const da = ia.map(d => d.date || '').filter(Boolean).sort().pop() || '';
+    const db = ib.map(d => d.date || '').filter(Boolean).sort().pop() || '';
+    return da > db ? -1 : da < db ? 1 : 0;
+  });
+
   const matchOrder = { P: 0, Q: 1, E: 2 };
-  for (const [key, items] of groups) {
+  for (const [key, items] of sortedGroups) {
     if (key === '__home__') {
       items.sort((a, b) => {
         const da = `${a.date || ''} ${a.time || ''}`.trim();
