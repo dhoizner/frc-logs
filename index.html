@@ -721,8 +721,12 @@ const _charts = [];
 let _disabledIntervals = []; // computed per log, used by renderTimeline overlays
 
 const ZOOM_OPTS = {
-  zoom: { drag: { enabled: true }, wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, mode: 'x' },
-  pan:  { enabled: true, mode: 'x' },
+  zoom: { drag: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+  pan:  { enabled: true, mode: 'x', modifierKey: 'ctrl' },
+};
+const ZOOM_OPTS_XY = {
+  zoom: { drag: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
+  pan:  { enabled: true, mode: 'xy', modifierKey: 'ctrl' },
 };
 
 // Tooltip tracks exact mouse position instead of snapping to nearest data point
@@ -856,6 +860,7 @@ function makeScatterChart(container, datasets, xLabel = 'Duration (s)', yLabel =
       animation: false, responsive: true, maintainAspectRatio: false,
       plugins: {
         legend: { display: true, labels: { font: { size: 11 }, color: '#a89090' } },
+        zoom: ZOOM_OPTS_XY,
         annotation: { annotations },
       },
       scales: {
