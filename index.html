@@ -720,8 +720,7 @@ function renderOverview(panel, P, minT, maxT) {
   const matchTime  = P.get('Robot/Match Time');
   const energyWh   = P.get('EnergyUtil/Total Used Energy Watt Hours');
   const totalCurr  = P.get('EnergyUtil/Total current Current');
-  const shooterErr = P.get('Superstructure/Shooter/Implemented Error (RPM)');
-  const turretErr  = P.get('Superstructure/Turret/Closed Loop Error (deg)');
+  const turretAtTolS  = P.get('Superstructure/Turret At Tolerance?');
   const velX       = P.get('Swerve/Velocity Field Relative X (m per s)');
   const velY       = P.get('Swerve/Velocity Field Relative Y (m per s)');
   const poseSamples= P.get('Swerve/Pose');
@@ -776,6 +775,58 @@ function renderOverview(panel, P, minT, maxT) {
   const sotmFreePct = pctNotStopped('SOTM');
   const fotmFreePct = pctNotStopped('FOTM');
 
+  // % of (SOTM+FOTM ∩ shouldStop=false) time each subsystem is at tolerance
+  function pctTrueWhileActivelyScoring(boolSamples, ...states) {
+    if (!boolSamples.length || !stateS.length) return null;
+    const toIvs = s => { const r=[];let st=null; for(const{ts,val}of s){if(val&&st===null)st=ts;else if(!val&&st!==null){r.push([st,ts]);st=null;}} if(st!==null)r.push([st,s[s.length-1].ts]); return r; };
+    const isect = (a,b) => { let t=0; for(const[a0,a1]of a)for(const[b0,b1]of b){const s=Math.max(a0,b0),e=Math.min(a1,b1);if(e>s)t+=e-s;} return t; };
+    const stateIvs = [];
+    for (let i = 0; i < stateS.length; i++) {
+      if (states.includes(stateS[i].val))
+        stateIvs.push([stateS[i].ts, i+1 < stateS.length ? stateS[i+1].ts : maxT]);
+    }
+    // Intersect with shouldStop=false intervals
+    const notStoppedIvs = toIvs(shouldStopS.map(s => ({ ts: s.ts, val: !s.val })));
+    const activeIvs = [];
+    for (const [a0,a1] of stateIvs) for (const [b0,b1] of notStoppedIvs) {
+      const s=Math.max(a0,b0), e=Math.min(a1,b1); if(e>s) activeIvs.push([s,e]);
+    }
+    const activeDur = activeIvs.reduce((s,[a,b])=>s+(b-a),0);
+    if (activeDur === 0) return null;
+    return Math.min(isect(toIvs(boolSamples), activeIvs) / activeDur * 100, 100);
+  }
+
+  const shooterReadyPct = pctTrueWhileActivelyScoring(shooterAtTolS, 'SOTM', 'FOTM');
+  const hoodReadyPct    = pctTrueWhileActivelyScoring(hoodAtTolS,    'SOTM', 'FOTM');
+  const turretReadyPct  = pctTrueWhileActivelyScoring(turretAtTolS,  'SOTM', 'FOTM');
+
+  function readyColor(pct) { return pct === null ? undefined : pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--yellow)' : 'var(--red)'; }
+
+  // SOTM startup latency
+  let sotmMeanLatency = null, sotmMaxLatency = null;
+  if (stateS.length && readyS.length) {
+    const latencies = [];
+    for (let i = 1; i < stateS.length; i++) {
+      if (stateS[i].val === 'SOTM' && stateS[i-1].val !== 'SOTM') {
+        const entryTs = stateS[i].ts;
+        const nextStateChange = stateS.find(st => st.ts > entryTs && st.val !== 'SOTM');
+        const sotmEnd = nextStateChange ? nextStateChange.ts : maxT;
+        const hit = readyS.find(r => r.ts >= entryTs && r.ts <= sotmEnd && r.val === true);
+        if (hit) latencies.push(hit.ts - entryTs);
+      }
+    }
+    if (latencies.length) {
+      sotmMeanLatency = latencies.reduce((a, b) => a + b, 0) / latencies.length;
+      sotmMaxLatency  = Math.max(...latencies);
+    }
+  }
+
+  // Max values of SOTM/FOTM stopped timers
+  const sotmTimerS = P.get('Superstructure/SOTM Stopped Timer');
+  const fotmTimerS = P.get('Superstructure/FOTM Stopped Timer');
+  const maxSotmTimer = peakVal(sotmTimerS);
+  const maxFotmTimer = peakVal(fotmTimerS);
+
   section(panel, 'Match Summary', d => {
     kpis(d, [
       { label: 'Starting Battery V',  value: fmt(battV.length ? battV[0].val : null, 2), unit: 'V' },
@@ -783,13 +834,18 @@ function renderOverview(panel, P, minT, maxT) {
       { label: 'Total Energy Used',   value: fmt(lastVal(energyWh), 2), unit: 'Wh' },
       { label: 'Peak Total Current',  value: fmt(peakInstCurrent, 0), unit: 'A' },
       { label: 'Peak Swerve Speed',   value: fmt(peakVel, 2), unit: 'm/s' },
-      { label: 'Peak Shooter Error',  value: fmt(peakVal(shooterErr?.map ? shooterErr : []), 0), unit: 'RPM' },
-      { label: 'Peak Turret Error',   value: fmt(peakVal(turretErr), 1), unit: '°' },
-      { label: 'Loop Overruns',        value: String(overrunCount), unit: '', valueColor: overrunCount < 5 ? 'var(--green)' : 'var(--red)' },
+      { label: 'Loop Overruns',       value: String(overrunCount), unit: '', valueColor: overrunCount < 5 ? 'var(--green)' : 'var(--red)' },
       { label: 'Log Duration',        value: fmt(maxT - minT, 1), unit: 's' },
       { label: 'Time Enabled',        value: fmt(timeEnabled, 1), unit: 's' },
-      { label: 'SOTM Ready %',         value: fmt(sotmFreePct, 1), unit: '%' },
-      { label: 'FOTM Ready %',         value: fmt(fotmFreePct, 1), unit: '%' },
+      { label: 'SOTM Ready %',          value: fmt(sotmFreePct,     1), unit: '%', valueColor: readyColor(sotmFreePct) },
+      { label: 'FOTM Ready %',          value: fmt(fotmFreePct,     1), unit: '%', valueColor: readyColor(fotmFreePct) },
+      { label: 'Mean SOTM Startup',     value: fmt(sotmMeanLatency, 2), unit: 's' },
+      { label: 'Max SOTM Startup',      value: fmt(sotmMaxLatency,  2), unit: 's' },
+      { label: 'SOTM Stopped', value: fmt(maxSotmTimer, 2), unit: 's' },
+      { label: 'FOTM Stopped', value: fmt(maxFotmTimer, 2), unit: 's' },
+      { label: 'Shooter Ready % (active)',     value: fmt(shooterReadyPct, 1), unit: '%', valueColor: readyColor(shooterReadyPct) },
+      { label: 'Hood Ready % (active)',        value: fmt(hoodReadyPct,    1), unit: '%', valueColor: readyColor(hoodReadyPct)    },
+      { label: 'Turret Ready % (active)',      value: fmt(turretReadyPct,  1), unit: '%', valueColor: readyColor(turretReadyPct)  },
     ]);
   });
 
@@ -1101,16 +1157,6 @@ function renderSuperstructure(panel, P, minT, maxT) {
       });
     }
 
-    const sotm = P.get('Superstructure/SOTM Stopped Timer');
-    const fotm = P.get('Superstructure/FOTM Stopped Timer');
-    if (sotm.length || fotm.length) {
-      section(d, 'SOTM / FOTM Stopped Timers', s => {
-        const ds = [];
-        if (sotm.length) ds.push(lineDataset('SOTM Stopped Timer (s)', toXY(sotm), '#f97316'));
-        if (fotm.length) ds.push(lineDataset('FOTM Stopped Timer (s)', toXY(fotm), '#ec4899'));
-        makeLineChart(s, ds, 'Seconds');
-      });
-    }
   }
 
   function renderInterp(d) {
@@ -1132,11 +1178,110 @@ function renderSuperstructure(panel, P, minT, maxT) {
     const hoodErr = P.get('Superstructure/Hood/Closed Loop Error (deg)');
     const shotErr = P.get('Superstructure/Shooter/Implemented Error (RPM)');
     const turrErr = P.get('Superstructure/Turret/Closed Loop Error (deg)');
+    const readyS  = P.get('Superstructure/Is Ready To Shoot?');
 
     if (stateS.length) {
       section(d, 'Superstructure State', s => {
         stateLegend(s, stateS, COLORS.superstructure);
         renderTimeline(s, [{ name: 'Superstructure', segments: toSegments(stateS), colorFn: v => sc(COLORS.superstructure, v) }], minT, maxT);
+      });
+    }
+
+    if (stateS.length && readyS.length) {
+      section(d, 'Time to Ready After SOTM Entry', s => {
+        // Find each SOTM entry (transition from non-SOTM to SOTM)
+        const sotmEntries = [];
+        for (let i = 1; i < stateS.length; i++) {
+          if (stateS[i].val === 'SOTM' && stateS[i-1].val !== 'SOTM') {
+            sotmEntries.push(stateS[i].ts);
+          }
+        }
+
+        if (!sotmEntries.length) return noData(s, 'No SOTM state transitions found.');
+
+        // For each entry, find first readyS=true after that timestamp
+        const points = [];
+        for (const entryTs of sotmEntries) {
+          const hit = readyS.find(r => r.ts >= entryTs && r.val === true);
+          // Only count if ready event is within the same SOTM window
+          const nextStateChange = stateS.find(st => st.ts > entryTs && st.val !== 'SOTM');
+          const sotmEnd = nextStateChange ? nextStateChange.ts : maxT;
+          if (hit && hit.ts <= sotmEnd) {
+            points.push({ entryTs, latency: hit.ts - entryTs });
+          } else {
+            points.push({ entryTs, latency: null }); // never became ready
+          }
+        }
+
+        const validPts = points.filter(p => p.latency !== null);
+        const meanLatency = validPts.length ? validPts.reduce((s,p) => s + p.latency, 0) / validPts.length : null;
+        const maxLatency  = validPts.length ? Math.max(...validPts.map(p => p.latency)) : null;
+        const neverReady  = points.length - validPts.length;
+
+        kpis(s, [
+          { label: 'SOTM Entries',       value: String(points.length),       unit: '' },
+          { label: 'Never Ready',        value: String(neverReady),          unit: '', valueColor: neverReady > 0 ? 'var(--red)' : 'var(--green)' },
+          { label: 'Mean Time to Ready', value: fmt(meanLatency, 2),         unit: 's' },
+          { label: 'Max Time to Ready',  value: fmt(maxLatency,  2),         unit: 's' },
+        ]);
+
+        if (!validPts.length) return noData(s, 'Robot never became ready within a SOTM window.');
+
+        const labels = points.map((p, i) => `SOTM ${i+1}\n@${p.entryTs.toFixed(1)}s`);
+        const data   = points.map(p => p.latency === null ? null : parseFloat(p.latency.toFixed(3)));
+        const colors = points.map(p => p.latency === null ? '#ef4444' : p.latency < 0.5 ? '#22c55e' : p.latency < 1.5 ? '#f59e0b' : '#ef4444');
+
+        const wrap = document.createElement('div'); wrap.className = 'chart-wrap'; s.appendChild(wrap);
+        const canvas = document.createElement('canvas'); canvas.height = 160; wrap.appendChild(canvas);
+        new Chart(canvas, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Time to Ready (s)',
+              data,
+              backgroundColor: colors,
+              borderColor: colors,
+              borderWidth: 1,
+              borderRadius: 3,
+            }],
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { display: false },
+              annotation: { annotations: {
+                mean: meanLatency ? hLine(meanLatency, `mean ${meanLatency.toFixed(2)}s`, '#a89090') : undefined,
+              }},
+              tooltip: { callbacks: {
+                label: ctx => ctx.raw === null ? 'Never became ready' : `${ctx.raw.toFixed(3)} s`,
+              }},
+            },
+            scales: {
+              x: { ticks: { color: '#a89090', font: { size: 10 } }, grid: { color: '#3d2525' } },
+              y: { title: { display: true, text: 'seconds', color: '#a89090', font: { size: 11 } },
+                   ticks: { color: '#a89090' }, grid: { color: '#3d2525' }, beginAtZero: true },
+            },
+          },
+        });
+
+        if (neverReady > 0) {
+          const note = document.createElement('p');
+          note.style.cssText = 'font-size:11px;color:#ef4444;margin-top:6px';
+          note.textContent = `${neverReady} SOTM entry/entries never reached ready — shown as missing bars.`;
+          s.appendChild(note);
+        }
+      });
+    }
+
+    const sotmTimerS2 = P.get('Superstructure/SOTM Stopped Timer');
+    const fotmTimerS2 = P.get('Superstructure/FOTM Stopped Timer');
+    if (sotmTimerS2.length || fotmTimerS2.length) {
+      section(d, 'SOTM / FOTM Stopped Timers', s => {
+        const ds = [];
+        if (sotmTimerS2.length) ds.push(lineDataset('SOTM Stopped', toXY(sotmTimerS2), '#f97316'));
+        if (fotmTimerS2.length) ds.push(lineDataset('FOTM Stopped', toXY(fotmTimerS2), '#ec4899'));
+        makeLineChart(s, ds, 'Seconds');
       });
     }
 
