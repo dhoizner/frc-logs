@@ -332,12 +332,20 @@ async function _renderCloudInto(list, status, onCardClick) {
     groups.get(key).push(d);
   }
 
-  const matchOrder = { Q: 0, P: 1, E: 2 };
+  const matchOrder = { P: 0, Q: 1, E: 2 };
   for (const [key, items] of groups) {
-    items.sort((a, b) => {
-      if (a.match_type !== b.match_type) return (matchOrder[a.match_type] ?? 9) - (matchOrder[b.match_type] ?? 9);
-      return (a.match_num ?? 0) - (b.match_num ?? 0);
-    });
+    if (key === '__home__') {
+      items.sort((a, b) => {
+        const da = `${a.date || ''} ${a.time || ''}`.trim();
+        const db = `${b.date || ''} ${b.time || ''}`.trim();
+        return da < db ? -1 : da > db ? 1 : 0;
+      });
+    } else {
+      items.sort((a, b) => {
+        if (a.match_type !== b.match_type) return (matchOrder[a.match_type] ?? 9) - (matchOrder[b.match_type] ?? 9);
+        return (a.match_num ?? 0) - (b.match_num ?? 0);
+      });
+    }
 
     const groupEl = document.createElement('div'); groupEl.className = 'cloud-group';
     const label = document.createElement('div'); label.className = 'cloud-group-label';
@@ -1029,13 +1037,27 @@ function renderOverview(panel, P, minT, maxT) {
   const robotTotalCurr = P.get('Robot/Total Current Draw');
   const peakInstCurrent = peakVal(robotTotalCurr);
 
-  // % of SOTM / FOTM time where shouldStop is false (clipToState is hoisted)
+  // % of SOTM / FOTM time where shouldStop is false, counting only DS-enabled periods
+  const enabledIntervals = [];
+  for (let i = 0; i < enabledS.length - 1; i++) {
+    if (enabledS[i].val) enabledIntervals.push([enabledS[i].ts, enabledS[i+1].ts]);
+  }
+  function enabledOverlap(t0, t1) {
+    if (!enabledIntervals.length) return t1 - t0;
+    let overlap = 0;
+    for (const [es, ee] of enabledIntervals) {
+      const s = Math.max(t0, es), e = Math.min(t1, ee);
+      if (e > s) overlap += e - s;
+    }
+    return overlap;
+  }
   function pctNotStopped(targetState) {
+    if (!enabledIntervals.length) return null;
     const clipped = clipToState(shouldStopS, targetState);
     if (!clipped.length) return null;
     let totalTime = 0, freeTime = 0;
     for (let i = 0; i < clipped.length - 1; i++) {
-      const dt = clipped[i+1].ts - clipped[i].ts;
+      const dt = enabledOverlap(clipped[i].ts, clipped[i+1].ts);
       totalTime += dt;
       if (!clipped[i].val) freeTime += dt;
     }
