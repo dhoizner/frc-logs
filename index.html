@@ -1096,6 +1096,7 @@ function fmt(v, dec=2, unit='') {
 const _charts = [];
 const _timelineRenders = [];
 let _currentZoom = null;
+let _timelineDragState = null; // { wrap, sel, entry, startT }
 let _disabledIntervals = []; // computed per log, used by renderTimeline overlays
 
 const ZOOM_OPTS = {
@@ -1202,6 +1203,43 @@ function resetAllZoom() {
   for (const entry of _timelineRenders) {
     _rerenderTimeline(entry, entry.origMinT, entry.origMaxT);
   }
+}
+
+// Global handlers for timeline drag-to-zoom (registered once)
+document.addEventListener('mousemove', e => {
+  const s = _timelineDragState;
+  if (!s) return;
+  _updateTimelineSel(s, e.clientX);
+});
+document.addEventListener('mouseup', e => {
+  const s = _timelineDragState;
+  if (!s) return;
+  s.sel.style.display = 'none';
+  _timelineDragState = null;
+  const track = s.wrap.querySelector('.timeline-track');
+  if (!track) return;
+  const vis = _currentZoom ?? { min: s.entry.origMinT, max: s.entry.origMaxT };
+  const frac = Math.max(0, Math.min(1, (e.clientX - track.getBoundingClientRect().left) / track.getBoundingClientRect().width));
+  const endT = vis.min + frac * (vis.max - vis.min);
+  const lo = Math.min(s.startT, endT), hi = Math.max(s.startT, endT);
+  if (hi - lo < 0.5) { resetAllZoom(); return; }
+  _applyZoom(lo, hi);
+});
+
+function _updateTimelineSel(s, clientX) {
+  const track = s.wrap.querySelector('.timeline-track');
+  if (!track) return;
+  const vis = _currentZoom ?? { min: s.entry.origMinT, max: s.entry.origMaxT };
+  const tr = track.getBoundingClientRect();
+  const wr = s.wrap.getBoundingClientRect();
+  const trackOffL = tr.left - wr.left;
+  function tf(t) { return Math.max(0, Math.min(1, (t - vis.min) / (vis.max - vis.min))); }
+  const curFrac = Math.max(0, Math.min(1, (clientX - tr.left) / tr.width));
+  const curT = vis.min + curFrac * (vis.max - vis.min);
+  const lo = Math.min(s.startT, curT), hi = Math.max(s.startT, curT);
+  s.sel.style.left  = (trackOffL + tf(lo) * tr.width) + 'px';
+  s.sel.style.width = Math.max(2, (tf(hi) - tf(lo)) * tr.width) + 'px';
+  s.sel.style.display = 'block';
 }
 
 function initZoomBar(minT, maxT) {
@@ -1457,6 +1495,8 @@ function kpis(parent, tiles) {
 function renderTimeline(parent, rows, minT, maxT) {
   const span = maxT - minT || 1;
   const wrap = document.createElement('div'); wrap.className = 'timeline';
+  wrap.style.position = 'relative';
+  wrap.style.cursor = 'crosshair';
   const trackEls = [];
   for (const row of rows) {
     const el = document.createElement('div'); el.className = 'timeline-row';
@@ -1491,10 +1531,28 @@ function renderTimeline(parent, rows, minT, maxT) {
     const tk = document.createElement('span'); tk.textContent = t.toFixed(0) + 's'; axis.appendChild(tk);
   }
   wrap.appendChild(axis);
+
+  // Drag-to-zoom selection overlay
+  const sel = document.createElement('div');
+  sel.style.cssText = 'position:absolute;top:0;bottom:0;background:rgba(239,68,68,0.12);border-left:2px solid #ef4444;border-right:2px solid #ef4444;pointer-events:none;display:none;z-index:10;border-radius:2px';
+  wrap.appendChild(sel);
+
   parent.appendChild(wrap);
   const entry = { tracks: trackEls, axis, rows, origMinT: minT, origMaxT: maxT };
   _timelineRenders.push(entry);
   if (_currentZoom) _rerenderTimeline(entry, _currentZoom.min, _currentZoom.max);
+
+  wrap.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const track = wrap.querySelector('.timeline-track');
+    if (!track) return;
+    const vis = _currentZoom ?? { min: entry.origMinT, max: entry.origMaxT };
+    const tr = track.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (e.clientX - tr.left) / tr.width));
+    _timelineDragState = { wrap, sel, entry, startT: vis.min + frac * (vis.max - vis.min) };
+    _updateTimelineSel(_timelineDragState, e.clientX);
+  });
 }
 
 // ================================================================
@@ -3751,18 +3809,17 @@ function renderDiagnostics(panel, P, minT, maxT) {
     const gcCnt = P.get('Robot/GC Counts');
     const gcSum = P.get('Robot/Sum of GC Time MS');
     const cpu   = P.get('Robot/CPU Temperature (C)');
-    const totalI= P.get('Robot/Total Current Draw');
 
-    if (!gcMs.length && !cpu.length) return noData(d, 'GC/CPU keys not found (may require DEBUG_MODE).');
+    if (!gcMs.length && !gcCnt.length && !gcSum.length && !cpu.length)
+      return noData(d, 'GC/CPU keys not found (may require DEBUG_MODE).');
 
     const ds = [];
-    if (gcMs.length)  ds.push(lineDataset('GC Time per loop (ms)',  toXY(gcMs),  '#f97316'));
+    if (gcMs.length)  ds.push(lineDataset('GC Time per loop (ms)', toXY(gcMs),  '#f97316'));
     if (gcSum.length) ds.push(lineDataset('Cumul GC Time (ms)',     toXY(gcSum), '#f59e0b'));
-    if (gcCnt.length) ds.push(lineDataset('GC Count per loop',       toXY(gcCnt), '#3b82f6'));
+    if (gcCnt.length) ds.push(lineDataset('GC Count per loop',      toXY(gcCnt), '#3b82f6'));
     if (ds.length) makeLineChart(d, ds, '');
 
     if (cpu.length) makeLineChart(d, [lineDataset('CPU Temp (°C)', toXY(cpu), '#ef4444')], '°C');
-    if (totalI.length) makeLineChart(d, [lineDataset('Total Current Draw (A)', toXY(totalI), '#8b5cf6')], 'A');
   });
 
   // CAN connectivity
@@ -3784,12 +3841,8 @@ function renderDiagnostics(panel, P, minT, maxT) {
   // Robot global
   section(panel, 'Robot Global Stats', d => {
     const matchT = P.get('Robot/Match Time');
-    const battV  = P.get('Robot/Battery Voltage');
-    const ds = [];
-    if (matchT.length) ds.push(lineDataset('Match Time (s)', toXY(matchT), '#3b82f6'));
-    if (battV.length)  ds.push(lineDataset('Battery Voltage (V)', toXY(battV), '#22c55e'));
-    if (!ds.length) return noData(d);
-    makeLineChart(d, ds, '');
+    if (!matchT.length) return noData(d);
+    makeLineChart(d, [lineDataset('Match Time (s)', toXY(matchT), '#3b82f6')], 's');
   });
 
 }
@@ -3867,6 +3920,7 @@ function initTabs(P, fileName) {
   _charts.length = 0;
   _timelineRenders.length = 0;
   _currentZoom = null;
+  _timelineDragState = null;
   _zoomBarData = null;
   initZoomBar(minT, maxT);
 
