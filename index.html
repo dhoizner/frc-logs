@@ -35,10 +35,20 @@ main{padding:0}
 #dropzone strong{color:var(--text)}
 #file-input{display:none}
 #dashboard{display:none}
-#tabbar{display:flex;overflow-x:auto;background:var(--surface);border-bottom:1px solid var(--border);padding:0 12px;gap:2px}
+#sticky-nav{position:sticky;top:0;z-index:90;background:var(--surface);border-bottom:1px solid var(--border)}
+#tabbar{display:flex;overflow-x:auto;background:var(--surface);padding:0 12px;gap:2px}
 .tab-btn{padding:10px 16px;border:none;border-bottom:2px solid transparent;background:none;color:var(--muted);cursor:pointer;white-space:nowrap;font-size:13px;font-weight:500;transition:.15s}
 .tab-btn:hover{color:var(--text)}
 .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+#zoom-bar{display:flex;align-items:center;gap:10px;padding:6px 16px;background:var(--surface);border-top:1px solid var(--border);user-select:none}
+#zoom-track-wrap{flex:1;display:flex;flex-direction:column;gap:2px}
+#zoom-track{position:relative;height:16px;background:var(--surface2);border-radius:3px;cursor:crosshair}
+#zoom-brush{position:absolute;top:0;bottom:0;left:0;right:0;background:rgba(239,68,68,0.12);border-left:2px solid var(--accent);border-right:2px solid var(--accent);border-radius:2px;cursor:crosshair;pointer-events:none}
+.zoom-handle{position:absolute;top:0;bottom:0;width:12px;cursor:ew-resize;z-index:1;pointer-events:auto}
+#zoom-handle-l{left:-6px}
+#zoom-handle-r{right:-6px}
+#zoom-axis{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);pointer-events:none}
+#zoom-label{font-size:11px;color:var(--muted);white-space:nowrap;min-width:140px;text-align:right}
 #panels{padding:16px 20px;width:100%}
 .tab-panel{display:block}.tab-panel.hidden{display:none}
 .subtab-bar{display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap}
@@ -236,7 +246,22 @@ tr:hover td{background:var(--surface2)}
   </div>
 
   <div id="dashboard">
+    <div id="sticky-nav">
     <div id="tabbar"></div>
+    <div id="zoom-bar">
+      <div id="zoom-track-wrap">
+        <div id="zoom-track">
+          <div id="zoom-brush">
+            <div id="zoom-handle-l" class="zoom-handle"></div>
+            <div id="zoom-handle-r" class="zoom-handle"></div>
+          </div>
+        </div>
+        <div id="zoom-axis"></div>
+      </div>
+      <div id="zoom-label"></div>
+      <button class="btn" onclick="resetAllZoom()" style="font-size:11px;padding:2px 10px;white-space:nowrap">Reset Zoom</button>
+    </div>
+    </div><!-- /sticky-nav -->
     <div id="panels"></div>
   </div>
 </main>
@@ -1069,16 +1094,193 @@ function fmt(v, dec=2, unit='') {
 // CHART HELPERS
 // ================================================================
 const _charts = [];
+const _timelineRenders = [];
+let _currentZoom = null;
 let _disabledIntervals = []; // computed per log, used by renderTimeline overlays
 
 const ZOOM_OPTS = {
-  zoom: { drag: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
-  pan:  { enabled: true, mode: 'x', modifierKey: 'ctrl' },
+  zoom: { drag: { enabled: true }, pinch: { enabled: true }, mode: 'x',
+          onZoomComplete: ({ chart }) => syncZoom(chart) },
+  pan:  { enabled: true, mode: 'x', modifierKey: 'ctrl',
+          onPanComplete: ({ chart }) => syncZoom(chart) },
 };
 const ZOOM_OPTS_XY = {
   zoom: { drag: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
   pan:  { enabled: true, mode: 'xy', modifierKey: 'ctrl' },
 };
+
+function _rerenderTimeline(entry, visMin, visMax) {
+  const span = (visMax - visMin) || 1;
+  entry.tracks.forEach((track, ri) => {
+    track.innerHTML = '';
+    const row = entry.rows[ri];
+    for (const seg of row.segments) {
+      const left = ((seg.start - visMin) / span) * 100;
+      const width = Math.max(0.05, ((seg.end - seg.start) / span) * 100);
+      const s = document.createElement('div'); s.className = 'timeline-seg';
+      s.style.left = left + '%'; s.style.width = width + '%';
+      s.style.backgroundColor = row.colorFn ? row.colorFn(seg.val) : '#3b82f6';
+      s.title = `${seg.val}  ${seg.start.toFixed(2)}s – ${seg.end.toFixed(2)}s`;
+      track.appendChild(s);
+    }
+    for (const [ds, de] of _disabledIntervals) {
+      const left  = ((ds - visMin) / span) * 100;
+      const width = Math.max(0, ((de - ds) / span) * 100);
+      if (width < 0.01) continue;
+      const ov = document.createElement('div'); ov.className = 'disabled-overlay';
+      ov.style.left = left + '%'; ov.style.width = width + '%';
+      track.appendChild(ov);
+    }
+  });
+  entry.axis.innerHTML = '';
+  for (let i = 0; i <= 10; i++) {
+    const t = visMin + (i / 10) * span;
+    const tk = document.createElement('span'); tk.textContent = t.toFixed(0) + 's'; entry.axis.appendChild(tk);
+  }
+}
+
+let _zoomBarData = null;
+let _zoomBarAbort = null;
+
+function _updateZoomBar(visMin, visMax) {
+  if (!_zoomBarData) return;
+  const { minT, maxT } = _zoomBarData;
+  const brush = document.getElementById('zoom-brush');
+  const label = document.getElementById('zoom-label');
+  if (!brush || !label) return;
+  const totalSpan = maxT - minT || 1;
+  const vMin = visMin ?? minT;
+  const vMax = visMax ?? maxT;
+  brush.style.left  = ((vMin - minT) / totalSpan * 100) + '%';
+  brush.style.right = ((maxT - vMax) / totalSpan * 100) + '%';
+  label.textContent = (visMin == null)
+    ? `${minT.toFixed(1)}s – ${maxT.toFixed(1)}s`
+    : `${vMin.toFixed(2)}s – ${vMax.toFixed(2)}s`;
+}
+
+function _applyZoom(visMin, visMax) {
+  _currentZoom = { min: visMin, max: visMax };
+  _updateZoomBar(visMin, visMax);
+  for (const chart of _charts) {
+    if (chart.config.type !== 'line') continue;
+    chart.scales.x.options.min = visMin;
+    chart.scales.x.options.max = visMax;
+    chart.update('none');
+  }
+  for (const entry of _timelineRenders) {
+    _rerenderTimeline(entry, visMin, visMax);
+  }
+}
+
+function syncZoom(source) {
+  const visMin = source.scales.x.min;
+  const visMax = source.scales.x.max;
+  _currentZoom = { min: visMin, max: visMax };
+  _updateZoomBar(visMin, visMax);
+  for (const chart of _charts) {
+    if (chart === source || chart.config.type !== 'line') continue;
+    chart.scales.x.options.min = visMin;
+    chart.scales.x.options.max = visMax;
+    chart.update('none');
+  }
+  for (const entry of _timelineRenders) {
+    _rerenderTimeline(entry, visMin, visMax);
+  }
+}
+
+function resetAllZoom() {
+  _currentZoom = null;
+  _updateZoomBar(null, null);
+  for (const chart of _charts) {
+    if (chart.config.type !== 'line') continue;
+    // Manually clear scale overrides instead of chart.resetZoom() to avoid
+    // triggering onZoomComplete which would re-set _currentZoom.
+    chart.scales.x.options.min = undefined;
+    chart.scales.x.options.max = undefined;
+    chart.update('none');
+  }
+  for (const entry of _timelineRenders) {
+    _rerenderTimeline(entry, entry.origMinT, entry.origMaxT);
+  }
+}
+
+function initZoomBar(minT, maxT) {
+  if (_zoomBarAbort) _zoomBarAbort.abort();
+  _zoomBarAbort = new AbortController();
+  const sig = _zoomBarAbort.signal;
+
+  _zoomBarData = { minT, maxT };
+  _updateZoomBar(null, null);
+
+  // Build axis ticks
+  const axis = document.getElementById('zoom-axis');
+  if (axis) {
+    axis.innerHTML = '';
+    const span = maxT - minT;
+    for (let i = 0; i <= 6; i++) {
+      const tk = document.createElement('span');
+      tk.textContent = (minT + (i / 6) * span).toFixed(0) + 's';
+      axis.appendChild(tk);
+    }
+  }
+
+  const track = document.getElementById('zoom-track');
+  const brush = document.getElementById('zoom-brush');
+  const lh    = document.getElementById('zoom-handle-l');
+  const rh    = document.getElementById('zoom-handle-r');
+  if (!track || !brush || !lh || !rh) return;
+
+  let dragMode = null, dragStartX = 0, dragStartMin = minT, dragStartMax = maxT;
+
+  function tFromX(clientX) {
+    const r = track.getBoundingClientRect();
+    return minT + Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * (maxT - minT);
+  }
+
+  lh.addEventListener('mousedown', e => {
+    e.stopPropagation(); e.preventDefault();
+    dragMode = 'resize-l'; dragStartX = e.clientX;
+    dragStartMin = _currentZoom?.min ?? minT; dragStartMax = _currentZoom?.max ?? maxT;
+  }, { signal: sig });
+
+  rh.addEventListener('mousedown', e => {
+    e.stopPropagation(); e.preventDefault();
+    dragMode = 'resize-r'; dragStartX = e.clientX;
+    dragStartMin = _currentZoom?.min ?? minT; dragStartMax = _currentZoom?.max ?? maxT;
+  }, { signal: sig });
+
+  track.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const t = tFromX(e.clientX);
+    dragMode = 'new'; dragStartX = e.clientX; dragStartMin = t; dragStartMax = t;
+  }, { signal: sig });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragMode) return;
+    const dT = (e.clientX - dragStartX) / track.getBoundingClientRect().width * (maxT - minT);
+    let vMin = dragStartMin, vMax = dragStartMax;
+    if (dragMode === 'pan') {
+      const w = dragStartMax - dragStartMin;
+      vMin = Math.max(minT, Math.min(maxT - w, dragStartMin + dT));
+      vMax = vMin + w;
+    } else if (dragMode === 'resize-l') {
+      vMin = Math.max(minT, Math.min(dragStartMax - 0.5, dragStartMin + dT));
+    } else if (dragMode === 'resize-r') {
+      vMax = Math.min(maxT, Math.max(dragStartMin + 0.5, dragStartMax + dT));
+    } else if (dragMode === 'new') {
+      const t = tFromX(e.clientX);
+      vMin = Math.min(dragStartMin, t); vMax = Math.max(dragStartMin, t);
+    }
+    _applyZoom(vMin, vMax);
+  }, { signal: sig });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragMode) return;
+    const vis = _currentZoom;
+    if (!vis || (vis.max - vis.min) < 0.5) resetAllZoom();
+    dragMode = null;
+  }, { signal: sig });
+}
 
 // Tooltip tracks exact mouse position instead of snapping to nearest data point
 Chart.Tooltip.positioners.cursor = (_, eventPos) => eventPos;
@@ -1192,7 +1394,7 @@ function makeLineChart(container, datasets, yLabel = '', annotations = {}, heigh
     },
   });
 
-  btn.onclick = () => chart.resetZoom();
+  btn.onclick = () => resetAllZoom();
   _charts.push(chart);
   return chart;
 }
@@ -1255,11 +1457,13 @@ function kpis(parent, tiles) {
 function renderTimeline(parent, rows, minT, maxT) {
   const span = maxT - minT || 1;
   const wrap = document.createElement('div'); wrap.className = 'timeline';
+  const trackEls = [];
   for (const row of rows) {
     const el = document.createElement('div'); el.className = 'timeline-row';
     const lbl = document.createElement('span'); lbl.className = 'timeline-label'; lbl.textContent = row.name; lbl.title = row.name;
     el.appendChild(lbl);
     const track = document.createElement('div'); track.className = 'timeline-track';
+    trackEls.push(track);
     for (const seg of row.segments) {
       const left = ((seg.start - minT) / span) * 100;
       const width = Math.max(0.05, ((seg.end - seg.start) / span) * 100);
@@ -1288,6 +1492,9 @@ function renderTimeline(parent, rows, minT, maxT) {
   }
   wrap.appendChild(axis);
   parent.appendChild(wrap);
+  const entry = { tracks: trackEls, axis, rows, origMinT: minT, origMaxT: maxT };
+  _timelineRenders.push(entry);
+  if (_currentZoom) _rerenderTimeline(entry, _currentZoom.min, _currentZoom.max);
 }
 
 // ================================================================
@@ -3658,6 +3865,10 @@ function initTabs(P, fileName) {
   tabbar.innerHTML = '';
   panels.innerHTML = '';
   _charts.length = 0;
+  _timelineRenders.length = 0;
+  _currentZoom = null;
+  _zoomBarData = null;
+  initZoomBar(minT, maxT);
 
   const tabData = tabDefs.map((def, i) => {
     const btn = document.createElement('button');
@@ -3881,6 +4092,16 @@ async function renderRecentCompare() {
   const { data } = await sb.from('logs').select('*').order('uploaded_at', { ascending: false }).limit(5);
   if (data?.length) renderCompareTable(document.getElementById('recent-compare-body'), data, null, filename => loadFromCloud(filename));
 }
+
+// Pin sticky-nav just below the sticky header
+(function() {
+  const hdr = document.querySelector('header');
+  const nav = document.getElementById('sticky-nav');
+  if (!hdr || !nav) return;
+  const setTop = () => nav.style.top = hdr.getBoundingClientRect().height + 'px';
+  setTop();
+  new ResizeObserver(setTop).observe(hdr);
+})();
 
 // Cloud history init
 if (SUPABASE_CONFIG) {
