@@ -1268,6 +1268,26 @@ function initZoomBar(minT, maxT) {
   const rh    = document.getElementById('zoom-handle-r');
   if (!track || !brush || !lh || !rh) return;
 
+  // Enabled-period indicators: green segments, inserted before the brush
+  track.querySelectorAll('.zoom-en-seg').forEach(el => el.remove());
+  const totalSpan = maxT - minT || 1;
+  let disPos = minT;
+  for (const [ds, de] of _disabledIntervals) {
+    if (ds > disPos) {
+      const seg = document.createElement('div');
+      seg.className = 'zoom-en-seg';
+      seg.style.cssText = `position:absolute;top:0;bottom:0;left:${(disPos-minT)/totalSpan*100}%;width:${(ds-disPos)/totalSpan*100}%;background:rgba(34,197,94,0.28);pointer-events:none`;
+      track.insertBefore(seg, brush);
+    }
+    disPos = de;
+  }
+  if (disPos < maxT) {
+    const seg = document.createElement('div');
+    seg.className = 'zoom-en-seg';
+    seg.style.cssText = `position:absolute;top:0;bottom:0;left:${(disPos-minT)/totalSpan*100}%;width:${(maxT-disPos)/totalSpan*100}%;background:rgba(34,197,94,0.28);pointer-events:none`;
+    track.insertBefore(seg, brush);
+  }
+
   let dragMode = null, dragStartX = 0, dragStartMin = minT, dragStartMax = maxT;
 
   function tFromX(clientX) {
@@ -4030,6 +4050,7 @@ function showDashboard(P, fileName, skipSave = false) {
   sessionStorage.setItem('dashboard_active', '1');
   document.getElementById('hero').style.display = 'none';
   document.getElementById('enabled-only-label').style.display = 'flex';
+
   const dash = document.getElementById('dashboard');
   dash.style.display = 'block';
   initTabs(P, fileName);
