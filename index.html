@@ -377,6 +377,7 @@ async function cloudUpload(file, P) {
     const { error: dbErr } = await sb.from('logs').insert(row);
     if (dbErr) throw dbErr;
 
+    history.replaceState(null, '', '?log=' + encodeURIComponent(file.name));
     renderCloudHistory();
     toast.dismiss();
   } catch (e) {
@@ -4089,14 +4090,20 @@ async function loadFromIDB() {
   } catch { return null; }
 }
 
-// On load, restore last file from IndexedDB
-loadFromIDB().then(saved => {
+// On load: permalink ?log= takes priority, then IDB restore
+(async () => {
+  const permalink = new URLSearchParams(location.search).get('log');
+  if (permalink && SUPABASE_CONFIG) {
+    loadFromCloud(permalink);
+    return;
+  }
+  const saved = await loadFromIDB();
   if (!saved || !sessionStorage.getItem('dashboard_active')) return;
   let P;
   try { P = new WPILOGParser().parse(saved.buffer); } catch { return; }
   _currentFile = new File([saved.buffer], saved.name, { type: 'application/octet-stream' });
   showDashboard(P, saved.name, /* skipSave */ true);
-});
+})();
 
 // ================================================================
 // FILE HANDLING
@@ -4189,6 +4196,10 @@ function showDashboard(P, fileName, skipSave = false) {
   document.getElementById('hero').style.display = 'none';
   document.getElementById('enabled-only-label').style.display = 'flex';
   document.getElementById('btn-download-log').style.display = '';
+  if (skipSave && SUPABASE_CONFIG) {
+    // Already in cloud — set permalink immediately
+    history.replaceState(null, '', '?log=' + encodeURIComponent(fileName));
+  }
 
   const dash = document.getElementById('dashboard');
   dash.style.display = 'block';
@@ -4200,6 +4211,7 @@ function showDashboard(P, fileName, skipSave = false) {
 function showUpload() {
   sessionStorage.removeItem('dashboard_active');
   localStorage.removeItem('tribecbot-active-tab');
+  history.replaceState(null, '', location.pathname);
   document.getElementById('hero').style.display = '';
   document.getElementById('enabled-only-label').style.display = 'none';
   document.getElementById('log-nav').style.display = 'none';
