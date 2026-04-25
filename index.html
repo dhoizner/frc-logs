@@ -21,6 +21,7 @@ header h1{font-size:16px;font-weight:700;color:var(--text)}
 header .badge{font-size:11px;padding:2px 7px;border-radius:9px;background:#5c0a0a;color:#fca5a5;font-weight:600}
 .btn{padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px}
 .btn:hover{background:var(--border)}
+.btn:disabled{opacity:0.35;cursor:default;pointer-events:none}
 .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .btn-primary:hover{background:#dc2626}
 #btn-upload{}
@@ -173,12 +174,16 @@ tr:hover td{background:var(--surface2)}
          alt="Tribecbot" style="height:30px;width:auto;border-radius:4px;display:block">
     Tribecbot Dashboard
   </h1>
-  <span class="badge">DogLog · 2026 Rebuilt</span>
   <a href="https://github.com/brunoUC/tempest-dashboard" target="_blank" rel="noopener" style="font-size:11px;color:var(--muted);text-decoration:none;margin-left:auto;margin-right:8px;white-space:nowrap">based on tempest-dashboard</a>
   <label id="enabled-only-label" style="display:none;align-items:center;gap:6px;font-size:12px;color:#64748b;cursor:pointer;white-space:nowrap;user-select:none;margin-right:4px">
     <input type="checkbox" id="enabled-only-cb"> Enabled only
   </label>
-  <button class="btn btn-primary" onclick="openLoadModal()">+ Load .wpilog</button>
+  <div id="log-nav" style="display:none;align-items:center;gap:4px">
+    <button class="btn" id="btn-nav-prev" style="font-size:13px;padding:4px 10px" title="Previous log (Alt+←)">‹</button>
+    <button class="btn" id="btn-nav-next" style="font-size:13px;padding:4px 10px" title="Next log (Alt+→)">›</button>
+  </div>
+  <button class="btn" id="btn-download-log" style="display:none;line-height:0" title="Download current log" onclick="downloadCurrentLog()"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+  <button class="btn btn-primary" style="line-height:0" title="Load log" onclick="openLoadModal()"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
   <input type="file" id="file-input" accept=".wpilog" multiple>
 </header>
 
@@ -237,6 +242,7 @@ tr:hover td{background:var(--surface2)}
         <div style="display:flex;gap:6px">
           <button class="btn" id="btn-cloud-compare" style="font-size:11px;padding:3px 10px">⇄ Compare</button>
           <button class="btn" id="btn-cloud-refresh" style="font-size:11px;padding:3px 10px">↻ Refresh</button>
+          <button class="btn" id="btn-cloud-reprocess" style="font-size:11px;padding:3px 10px">⟳ Reprocess All</button>
           <button class="btn-clear-hist" onclick="cloudDeleteAll()">Clear All</button>
         </div>
       </div>
@@ -283,18 +289,25 @@ const SUPABASE_CONFIG = {
 // Storage bucket: 'logs' (public). DB table: 'logs'.
 // ================================================================
 let _sb = null;
+let _sbPromise = null;
 
 async function getSupabase() {
   if (!SUPABASE_CONFIG) return null;
   if (_sb) return _sb;
-  try {
-    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
-    _sb = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
-    return _sb;
-  } catch (e) {
-    console.warn('Supabase unavailable:', e);
-    return null;
+  if (!_sbPromise) {
+    _sbPromise = (async () => {
+      try {
+        const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+        _sb = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+        return _sb;
+      } catch (e) {
+        console.warn('Supabase unavailable:', e);
+        _sbPromise = null;
+        return null;
+      }
+    })();
   }
+  return _sbPromise;
 }
 
 function parseWpilogName(filename) {
@@ -312,53 +325,56 @@ function parseWpilogName(filename) {
 
 let _currentFile = null; // holds the File object of the currently-viewed log
 
+function _extractLogMetrics(filename, P) {
+  const meta = parseWpilogName(filename);
+  const { minT, maxT } = getActiveTimeRange(P);
+  const battV    = P.get('Robot/Battery Voltage');
+  const energy   = getEnergyWh(P);
+  const curr     = P.get('Robot/Total Current Draw');
+  const sotmTimer = P.get('Superstructure/SOTM Stopped Timer');
+  const fotmTimer = P.get('Superstructure/FOTM Stopped Timer');
+  const stateS   = P.get('Superstructure/State');
+
+  function stoppedPct(timerSamples, stateName) {
+    const peak = peakVal(timerSamples);
+    if (peak === null || peak <= 0 || !stateS.length) return 0;
+    let dur = 0;
+    for (let i = 0; i < stateS.length; i++) {
+      if (stateS[i].val === stateName) {
+        const s = Math.max(stateS[i].ts, minT);
+        const e = Math.min(i + 1 < stateS.length ? stateS[i+1].ts : maxT, maxT);
+        dur += Math.max(0, e - s);
+      }
+    }
+    return dur === 0 ? null : +Math.max(0, Math.min(peak / dur * 100, 100)).toFixed(1);
+  }
+
+  return {
+    filename,
+    ...meta,
+    duration:         +(maxT - minT).toFixed(1),
+    start_batt_v:     +((battV.find(s => s.ts >= minT) ?? battV[0])?.val ?? 0).toFixed(2),
+    min_batt_v:       +(minVal(battV)  ?? 0).toFixed(2),
+    end_batt_v:       +(([...battV].reverse().find(s => s.ts <= maxT) ?? battV[battV.length - 1])?.val ?? 0).toFixed(2),
+    total_wh:         +(lastVal(energy) ?? 0).toFixed(2),
+    peak_curr:        +(peakVal(curr)  ?? 0).toFixed(0),
+    sotm_stopped_pct: stoppedPct(sotmTimer, 'SOTM'),
+    fotm_stopped_pct: stoppedPct(fotmTimer, 'FOTM'),
+  };
+}
+
 async function cloudUpload(file, P) {
   const toast = createToast(`Uploading ${file.name}…`);
   try {
     const sb = await getSupabase();
     if (!sb) throw new Error('Supabase not configured');
 
-    const meta = parseWpilogName(file.name);
-    const { minT, maxT } = getActiveTimeRange(P);
-    const battV    = P.get('Robot/Battery Voltage');
-    const energy   = P.get('EnergyUtil/Total Used Energy Watt Hours');
-    const curr     = P.get('Robot/Total Current Draw');
-    const sotmTimer = P.get('Superstructure/SOTM Stopped Timer');
-    const fotmTimer = P.get('Superstructure/FOTM Stopped Timer');
-    const stateS   = P.get('Superstructure/State');
-
-    function stoppedPct(timerSamples, stateName) {
-      const peak = peakVal(timerSamples);
-      if (peak === null || peak <= 0 || !stateS.length) return 0;
-      let dur = 0;
-      for (let i = 0; i < stateS.length; i++) {
-        if (stateS[i].val === stateName) {
-          const s = Math.max(stateS[i].ts, minT);
-          const e = Math.min(i + 1 < stateS.length ? stateS[i+1].ts : maxT, maxT);
-          dur += Math.max(0, e - s);
-        }
-      }
-      return dur === 0 ? null : +Math.max(0, Math.min(peak / dur * 100, 100)).toFixed(1);
-    }
-
-    // Upload file to Storage (upsert)
     const { error: storageErr } = await sb.storage.from('logs').upload(file.name, file, { upsert: true });
     if (storageErr) throw storageErr;
 
-    // Delete existing row then insert fresh — avoids needing UPDATE RLS policy
+    const row = _extractLogMetrics(file.name, P);
     await sb.from('logs').delete().eq('filename', file.name);
-    const { error: dbErr } = await sb.from('logs').insert({
-      filename:          file.name,
-      ...meta,
-      duration:          +(maxT - minT).toFixed(1),
-      start_batt_v:      +((battV.find(s => s.ts >= minT) ?? battV[0])?.val ?? 0).toFixed(2),
-      min_batt_v:        +(minVal(battV)  ?? 0).toFixed(2),
-      end_batt_v:        +(([...battV].reverse().find(s => s.ts <= maxT) ?? battV[battV.length - 1])?.val ?? 0).toFixed(2),
-      total_wh:          +(lastVal(energy) ?? 0).toFixed(2),
-      peak_curr:         +(peakVal(curr)  ?? 0).toFixed(0),
-      sotm_stopped_pct:  stoppedPct(sotmTimer, 'SOTM'),
-      fotm_stopped_pct:  stoppedPct(fotmTimer, 'FOTM'),
-    });
+    const { error: dbErr } = await sb.from('logs').insert(row);
     if (dbErr) throw dbErr;
 
     renderCloudHistory();
@@ -367,6 +383,34 @@ async function cloudUpload(file, P) {
     toast.dismiss();
     console.error('Cloud upload failed:', e);
   }
+}
+
+async function reprocessAllLogs() {
+  const sb = await getSupabase();
+  if (!sb) return;
+  const { data: rows } = await sb.from('logs').select('filename');
+  if (!rows?.length) return;
+
+  await Promise.all(rows.map(async ({ filename }) => {
+    const toast = createToast(`Reprocessing ${filename}…`);
+    try {
+      const { data, error } = await sb.storage.from('logs').download(filename);
+      if (error) throw error;
+      const buf = await data.arrayBuffer();
+      const P = new WPILOGParser().parse(buf);
+      const row = _extractLogMetrics(filename, P);
+      await sb.from('logs').delete().eq('filename', filename);
+      const { error: dbErr } = await sb.from('logs').insert(row);
+      if (dbErr) throw dbErr;
+    } catch (e) {
+      console.error(`Reprocess failed for ${filename}:`, e);
+    } finally {
+      toast.dismiss();
+    }
+  }));
+
+  renderCloudHistory();
+  renderRecentCompare();
 }
 
 function createToast(msg) {
@@ -386,7 +430,7 @@ async function loadFromCloud(filename) {
     if (error) throw error;
     const buf = await data.arrayBuffer();
     toast.dismiss();
-    parseAndShow(new File([buf], filename, { type: 'application/octet-stream' }));
+    parseAndShow(new File([buf], filename, { type: 'application/octet-stream' }), /* skipSave */ true);
   } catch (e) {
     toast.dismiss();
     alert('Failed to load from cloud: ' + e.message);
@@ -512,7 +556,13 @@ function closeLoadModal() {
     if (file) { closeLoadModal(); parseAndShow(file); }
   });
 })();
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLoadModal(); closeCompareModal(); } });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeLoadModal(); closeCompareModal(); }
+  if (e.altKey && e.key === 'ArrowLeft'  && _navIndex < _navSequence.length - 1)
+    loadFromCloud(_navSequence[_navIndex + 1]);
+  if (e.altKey && e.key === 'ArrowRight' && _navIndex > 0)
+    loadFromCloud(_navSequence[_navIndex - 1]);
+});
 document.getElementById('cloud-modal').addEventListener('click', e => {
   if (e.target === document.getElementById('cloud-modal')) closeLoadModal();
 });
@@ -1026,10 +1076,18 @@ function getTimeRange(P) {
 
 function getActiveTimeRange(P) {
   // Trim to DS:enabled === true windows; fall back to global range.
+  // Treat DS:enabled as a step function: each true segment runs from that
+  // sample's ts to the next sample's ts. If the last sample is true (robot
+  // still enabled when logging stopped), extend to the actual log end.
   const enabled = P.get('DS:enabled');
+  if (!enabled.length) return getTimeRange(P);
+  const { maxT: logMaxT } = getTimeRange(P);
   let lo = Infinity, hi = -Infinity;
-  for (const s of enabled) {
-    if (s.val) { if (s.ts < lo) lo = s.ts; if (s.ts > hi) hi = s.ts; }
+  for (let i = 0; i < enabled.length; i++) {
+    if (!enabled[i].val) continue;
+    if (enabled[i].ts < lo) lo = enabled[i].ts;
+    const segEnd = (i + 1 < enabled.length) ? enabled[i + 1].ts : logMaxT;
+    if (segEnd > hi) hi = segEnd;
   }
   if (isFinite(lo) && isFinite(hi)) {
     return { minT: Math.max(0, lo - 1), maxT: hi + 1 };
@@ -1073,6 +1131,12 @@ function leafSeriesOnly(map) {
   });
   return leaves.map(k => map[k]);
 }
+// Newer logs use 'EnergyUtil/Total Used Energy'; older logs use the longer key with 'Watt Hours'
+function getEnergyWh(P) {
+  const a = P.get('EnergyUtil/Total Used Energy');
+  return a.length ? a : P.get('EnergyUtil/Total Used Energy Watt Hours');
+}
+
 function minVal(samples)  { let m=Infinity; for(const s of samples) if(s.val<m) m=s.val; return isFinite(m)?m:null; }
 function lastVal(samples) { return samples.length ? samples[samples.length-1].val : null; }
 function avgVal(samples)  { if(!samples.length) return null; let s=0; for(const x of samples) s+=x.val; return s/samples.length; }
@@ -1524,13 +1588,15 @@ function renderTimeline(parent, rows, minT, maxT) {
     el.appendChild(lbl);
     const track = document.createElement('div'); track.className = 'timeline-track';
     trackEls.push(track);
-    for (const seg of row.segments) {
+    for (let si = 0; si < row.segments.length; si++) {
+      const seg = row.segments[si];
+      const segEnd = si === row.segments.length - 1 ? Math.max(seg.end, maxT) : seg.end;
       const left = ((seg.start - minT) / span) * 100;
-      const width = Math.max(0.05, ((seg.end - seg.start) / span) * 100);
+      const width = Math.max(0.05, ((segEnd - seg.start) / span) * 100);
       const s = document.createElement('div'); s.className = 'timeline-seg';
       s.style.left = left + '%'; s.style.width = width + '%';
       s.style.backgroundColor = row.colorFn ? row.colorFn(seg.val) : '#3b82f6';
-      s.title = `${seg.val}  ${seg.start.toFixed(2)}s – ${seg.end.toFixed(2)}s`;
+      s.title = `${seg.val}  ${seg.start.toFixed(2)}s – ${segEnd.toFixed(2)}s`;
       track.appendChild(s);
     }
     // Disabled-period overlays (hidden when body has .show-disabled)
@@ -1640,7 +1706,7 @@ function vLine(xVal, label, color = '#6b7280') {
 // ================================================================
 // TAB 1: OVERVIEW
 // ================================================================
-function renderOverview(panel, P, minT, maxT) {
+function renderOverview(panel, P, minT, maxT, fileName) {
   const stateS     = P.get('Superstructure/State');
   const readyS        = P.get('Superstructure/Is Ready To Shoot?');
   const shouldStopS   = P.get('Superstructure/Should Stop?');
@@ -1648,7 +1714,7 @@ function renderOverview(panel, P, minT, maxT) {
   const hoodAtTolS    = P.get('Superstructure/Hood At Tolerance?');
   const battV      = P.get('Robot/Battery Voltage');
   const matchTime  = P.get('Robot/Match Time');
-  const energyWh   = P.get('EnergyUtil/Total Used Energy Watt Hours');
+  const energyWh   = getEnergyWh(P);
   const totalCurr  = P.get('EnergyUtil/Total current Current');
   const turretAtTolS  = P.get('Superstructure/Turret At Tolerance?');
   const velX       = P.get('Swerve/Velocity Field Relative X (m per s)');
@@ -1786,7 +1852,11 @@ function renderOverview(panel, P, minT, maxT) {
   const sotmStoppedPct = stoppedTimerPct(sotmTimerS, 'SOTM');
   const fotmStoppedPct = stoppedTimerPct(fotmTimerS, 'FOTM');
 
-  section(panel, 'Match Summary', d => {
+  const { date: _d, time: _t, match_type: _mt, match_num: _mn } = parseWpilogName(fileName ?? '');
+  const _matchStr = _mt ? `${_mt}${_mn ?? ''}` : '';
+  const _dateStr  = _d ? (_t ? `${_d} ${_t.slice(0, 5)}` : _d) : '';
+  const _subtitle = [_matchStr, _dateStr].filter(Boolean).join(' · ');
+  section(panel, _subtitle ? `Match Summary — ${_subtitle}` : 'Match Summary', d => {
     kpis(d, [
       { label: 'SOTM Stopped %', value: fmt(sotmStoppedPct, 1), unit: '%', valueColor: sotmStoppedPct !== null ? (sotmStoppedPct < 10 ? 'var(--green)' : sotmStoppedPct < 30 ? 'var(--yellow)' : 'var(--red)') : undefined },
       { label: 'FOTM Stopped %', value: fmt(fotmStoppedPct, 1), unit: '%', valueColor: fotmStoppedPct !== null ? (fotmStoppedPct < 10 ? 'var(--green)' : fotmStoppedPct < 30 ? 'var(--yellow)' : 'var(--red)') : undefined },
@@ -1856,6 +1926,7 @@ function renderOverview(panel, P, minT, maxT) {
       { name: 'Turret Lagging SOTM',   samples: clipToState(P.get('Spindexer/Should Stop/Turret Lagging SOTM'), 'SOTM'), color: '#f97316' },
       { name: 'Is Turret Wrapping?',   samples: clipToState(P.get('Spindexer/Should Stop/Is Turret Wrapping?'),  'SOTM'), color: '#f97316' },
       { name: 'Is Under Trench?',      samples: clipToState(P.get('Spindexer/Should Stop/Is Under Trench?'),     'SOTM'), color: '#f97316' },
+      { name: 'Is Hopper Empty?',      samples: clipToState(P.get('Superstructure/Is Hopper Empty?'), 'SOTM'), color: '#f59e0b' },
     ];
     const allRows = rows.filter(r => r.samples.length).map(r => ({
       name: r.name, segments: toSegments(r.samples), colorFn: v => v ? r.color : '#374151',
@@ -2745,7 +2816,7 @@ function renderField(panel, P, minT, maxT) {
 // TAB 4: POWER / ENERGY
 // ================================================================
 function renderPower(panel, P, minT, maxT) {
-  const usedWh     = P.get('EnergyUtil/Total Used Energy Watt Hours');
+  const usedWh     = getEnergyWh(P);
   const battV      = P.get('Robot/Battery Voltage');
 
   // Dynamic per-subsystem keys
@@ -4023,13 +4094,14 @@ loadFromIDB().then(saved => {
   if (!saved || !sessionStorage.getItem('dashboard_active')) return;
   let P;
   try { P = new WPILOGParser().parse(saved.buffer); } catch { return; }
+  _currentFile = new File([saved.buffer], saved.name, { type: 'application/octet-stream' });
   showDashboard(P, saved.name, /* skipSave */ true);
 });
 
 // ================================================================
 // FILE HANDLING
 // ================================================================
-function parseAndShow(file) {
+function parseAndShow(file, skipSave = false) {
   const reader = new FileReader();
   reader.onload = e => {
     let P;
@@ -4041,20 +4113,88 @@ function parseAndShow(file) {
     }
     _currentFile = file;
     saveToIDB(file.name, e.target.result);
-    showDashboard(P, file.name);
+    showDashboard(P, file.name, skipSave);
   };
   reader.readAsArrayBuffer(file);
+}
+
+let _navSequence = []; // filenames in display order for current event
+let _navIndex = -1;    // index of currently-loaded log in _navSequence
+let _navGen = 0;       // incremented on each refresh to discard stale results
+
+async function _refreshNavSequence(fileName) {
+  const gen = ++_navGen;
+  _navSequence = [];
+  _navIndex = -1;
+  const sb = await getSupabase();
+  if (!sb) return;
+  // Prefer the event stored in the DB; fall back to parsing the filename
+  const { data: cur } = await sb.from('logs').select('event,date,time,match_type,match_num')
+    .eq('filename', fileName).maybeSingle();
+  const meta = cur ?? parseWpilogName(fileName);
+  const event = meta.event ?? null;
+  // Scope to the same event, or all logs when there is no event
+  let q = sb.from('logs').select('filename,date,time,match_type,match_num')
+    .order('date', { ascending: false, nullsFirst: false })
+    .order('time', { ascending: false, nullsFirst: false });
+  q = event ? q.eq('event', event) : q.is('event', null);
+  const { data } = await q;
+  // Always include the current file even if the DB insert is still in-flight
+  const rows = data ? [...data] : [];
+  if (!rows.some(r => r.filename === fileName)) {
+    rows.push({ filename: fileName, date: meta.date, time: meta.time,
+                match_type: meta.match_type, match_num: meta.match_num });
+  }
+  if (rows.length < 2) return;
+  const matchOrder = { E: 0, Q: 1, P: 2 };
+  rows.sort((a, b) => {
+    const da = `${a.date||''} ${a.time||''}`, db = `${b.date||''} ${b.time||''}`;
+    if (da !== db) return da < db ? 1 : -1;
+    const mo = (matchOrder[a.match_type] ?? 3) - (matchOrder[b.match_type] ?? 3);
+    if (mo !== 0) return mo;
+    return (b.match_num ?? 0) - (a.match_num ?? 0);
+  });
+  if (gen !== _navGen) return; // a newer call superseded this one
+  _navSequence = rows.map(r => r.filename);
+  _navIndex = _navSequence.indexOf(fileName);
+  _updateNavButtons();
+}
+
+function _updateNavButtons() {
+  const nav = document.getElementById('log-nav');
+  const prev = document.getElementById('btn-nav-prev');
+  const next = document.getElementById('btn-nav-next');
+  if (!nav || !prev || !next) return;
+  const hasNav = _navSequence.length > 1 && _navIndex !== -1;
+  nav.style.display = hasNav ? 'flex' : 'none';
+  // sequence is newest-first; ‹ = older (higher index), › = newer (lower index)
+  prev.disabled = _navIndex >= _navSequence.length - 1;
+  next.disabled = _navIndex <= 0;
+}
+
+function downloadCurrentLog() {
+  if (!_currentFile) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const a = Object.assign(document.createElement('a'), { href: e.target.result, download: _currentFile.name });
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+  reader.readAsDataURL(_currentFile);
 }
 
 function showDashboard(P, fileName, skipSave = false) {
   sessionStorage.setItem('dashboard_active', '1');
   document.getElementById('hero').style.display = 'none';
   document.getElementById('enabled-only-label').style.display = 'flex';
+  document.getElementById('btn-download-log').style.display = '';
 
   const dash = document.getElementById('dashboard');
   dash.style.display = 'block';
   initTabs(P, fileName);
   if (!skipSave && SUPABASE_CONFIG && _currentFile) cloudUpload(_currentFile, P);
+  if (SUPABASE_CONFIG) _refreshNavSequence(fileName);
 }
 
 function showUpload() {
@@ -4062,6 +4202,8 @@ function showUpload() {
   localStorage.removeItem('tribecbot-active-tab');
   document.getElementById('hero').style.display = '';
   document.getElementById('enabled-only-label').style.display = 'none';
+  document.getElementById('log-nav').style.display = 'none';
+  document.getElementById('btn-download-log').style.display = 'none';
   document.getElementById('dashboard').style.display = 'none';
 }
 
@@ -4164,7 +4306,11 @@ async function cloudDeleteAll() {
 async function renderRecentCompare() {
   const sb = await getSupabase();
   if (!sb) return;
-  const { data } = await sb.from('logs').select('*').order('uploaded_at', { ascending: false }).limit(5);
+  const { data } = await sb.from('logs').select('*')
+    .order('date', { ascending: false, nullsFirst: false })
+    .order('time', { ascending: false, nullsFirst: false })
+    .order('uploaded_at', { ascending: false })
+    .limit(5);
   if (data?.length) renderCompareTable(document.getElementById('recent-compare-body'), data, null, filename => loadFromCloud(filename));
 }
 
@@ -4198,7 +4344,14 @@ if (SUPABASE_CONFIG) {
     localStorage.setItem(RC_KEY, open ? 'true' : 'false');
   });
 
+  document.getElementById('btn-nav-prev')?.addEventListener('click', () => {
+    if (_navIndex < _navSequence.length - 1) loadFromCloud(_navSequence[_navIndex + 1]);
+  });
+  document.getElementById('btn-nav-next')?.addEventListener('click', () => {
+    if (_navIndex > 0) loadFromCloud(_navSequence[_navIndex - 1]);
+  });
   document.getElementById('btn-cloud-refresh')?.addEventListener('click', () => { renderCloudHistory(); renderRecentCompare(); });
+  document.getElementById('btn-cloud-reprocess')?.addEventListener('click', reprocessAllLogs);
   document.getElementById('btn-cloud-compare')?.addEventListener('click', openCompareModal);
   renderCloudHistory();
   renderRecentCompare();
