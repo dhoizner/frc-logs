@@ -111,12 +111,17 @@ tr:hover td{background:var(--surface2)}
 #history-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:10px}
 .history-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;cursor:pointer;position:relative}
 .history-card:hover{border-color:var(--accent)}
-.history-card .hc-name{font-weight:600;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:46px}
+.history-card .hc-name{font-weight:600;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:70px}
 .history-card .hc-meta{color:var(--muted)}
 .hc-del{position:absolute;top:8px;right:8px;background:none;border:none;color:#6b4040;cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;border-radius:4px}
 .hc-del:hover{color:#ef4444;background:var(--surface2)}
 .hc-dl{position:absolute;top:8px;right:30px;background:none;border:none;color:#6b4040;cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;border-radius:4px}
 .hc-dl:hover{color:#60a5fa;background:var(--surface2)}
+.hc-arch{position:absolute;top:8px;right:52px;background:none;border:none;color:#6b4040;cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;border-radius:4px}
+.hc-arch:hover{color:#f59e0b;background:var(--surface2)}
+.history-card.archived{opacity:.5}
+.history-card.archived:hover{opacity:.85}
+#btn-archive-log.is-archived{color:#f59e0b}
 .history-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .history-header h3{font-size:13px;font-weight:700;color:var(--muted);margin:0}
 .btn-clear-hist{background:none;border:1px solid var(--border);color:#6b4040;font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer}
@@ -182,6 +187,7 @@ tr:hover td{background:var(--surface2)}
     <button class="btn" id="btn-nav-prev" style="font-size:13px;padding:4px 10px" title="Previous log (Alt+←)">‹</button>
     <button class="btn" id="btn-nav-next" style="font-size:13px;padding:4px 10px" title="Next log (Alt+→)">›</button>
   </div>
+  <button class="btn" id="btn-archive-log" style="display:none;line-height:0" title="Archive current log" onclick="archiveCurrentLog()"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><line x1="10" y1="12" x2="14" y2="12"/></svg></button>
   <button class="btn" id="btn-download-log" style="display:none;line-height:0" title="Download current log" onclick="downloadCurrentLog()"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
   <button class="btn btn-primary" style="line-height:0" title="Load log" onclick="openLoadModal()"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
   <input type="file" id="file-input" accept=".wpilog" multiple>
@@ -239,7 +245,8 @@ tr:hover td{background:var(--surface2)}
     <div id="cloud-section" style="display:none">
       <div class="history-header">
         <h3 style="font-size:13px;font-weight:700;color:var(--muted);margin:0">☁ Cloud History</h3>
-        <div style="display:flex;gap:6px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer;user-select:none"><input type="checkbox" id="cb-show-archived"> Show archived</label>
           <button class="btn" id="btn-cloud-compare" style="font-size:11px;padding:3px 10px">⇄ Compare</button>
           <button class="btn" id="btn-cloud-refresh" style="font-size:11px;padding:3px 10px">↻ Refresh</button>
           <button class="btn" id="btn-cloud-reprocess" style="font-size:11px;padding:3px 10px">⟳ Reprocess All</button>
@@ -373,8 +380,7 @@ async function cloudUpload(file, P) {
     if (storageErr) throw storageErr;
 
     const row = _extractLogMetrics(file.name, P);
-    await sb.from('logs').delete().eq('filename', file.name);
-    const { error: dbErr } = await sb.from('logs').insert(row);
+    const { error: dbErr } = await sb.from('logs').upsert(row, { onConflict: 'filename' });
     if (dbErr) throw dbErr;
 
     history.replaceState(null, '', '?log=' + encodeURIComponent(file.name));
@@ -400,8 +406,7 @@ async function reprocessAllLogs() {
       const buf = await data.arrayBuffer();
       const P = new WPILOGParser().parse(buf);
       const row = _extractLogMetrics(filename, P);
-      await sb.from('logs').delete().eq('filename', filename);
-      const { error: dbErr } = await sb.from('logs').insert(row);
+      const { error: dbErr } = await sb.from('logs').upsert(row, { onConflict: 'filename' });
       if (dbErr) throw dbErr;
     } catch (e) {
       console.error(`Reprocess failed for ${filename}:`, e);
@@ -450,7 +455,7 @@ async function _renderCloudInto(list, status, onCardClick) {
   if (status) status.textContent = 'Loading…';
   const sb = await getSupabase();
   if (!sb) { if (status) status.textContent = 'Supabase unavailable.'; return; }
-  const { data: docs, error } = await sb.from('logs').select('*').order('uploaded_at', { ascending: false });
+  const { data: docs, error } = await _archivedFilter(sb.from('logs').select('*')).order('uploaded_at', { ascending: false });
   if (error) throw error;
   if (status) status.textContent = '';
   if (!docs.length) { list.innerHTML = '<p style="font-size:12px;color:var(--muted);font-style:italic">No logs uploaded yet.</p>'; return; }
@@ -497,12 +502,15 @@ async function _renderCloudInto(list, status, onCardClick) {
       const dateStr = d.date ? `${d.date} ${d.time || ''}`.trim() : '';
       const sotmStr = ` · SOTM ${d.sotm_stopped_pct != null ? d.sotm_stopped_pct + '% stopped' : 'N/A'}`;
       const fotmStr = ` · FOTM ${d.fotm_stopped_pct != null ? d.fotm_stopped_pct + '% stopped' : 'N/A'}`;
-      const card = document.createElement('div'); card.className = 'history-card';
+      const archIcon  = d.archived ? '↥' : '⮷';
+      const archTitle = d.archived ? 'Unarchive' : 'Archive';
+      const card = document.createElement('div'); card.className = 'history-card' + (d.archived ? ' archived' : '');
       card.title = `${d.filename} — click to load`;
-      card.innerHTML = `<button class="hc-dl" title="Download">↓</button><button class="hc-del" title="Delete">✕</button>
+      card.innerHTML = `<button class="hc-dl" title="Download">↓</button><button class="hc-arch" title="${archTitle}">${archIcon}</button><button class="hc-del" title="Delete">✕</button>
         <div class="hc-name">${badge}${d.filename}</div>
         <div class="hc-meta">${dateStr} · ${d.duration ?? '?'}s · ${d.min_batt_v ?? '?'}V · ${d.total_wh ?? '?'}Wh${sotmStr}${fotmStr}</div>`;
       card.querySelector('.hc-dl').onclick = e => { e.stopPropagation(); cloudDownloadFile(d.filename); };
+      card.querySelector('.hc-arch').onclick = e => { e.stopPropagation(); (d.archived ? cloudUnarchiveFile : cloudArchiveFile)(d.filename); };
       card.querySelector('.hc-del').onclick = e => { e.stopPropagation(); cloudDeleteFile(d.filename); };
       card.onclick = () => onCardClick(d.filename);
       grid.appendChild(card);
@@ -781,7 +789,7 @@ async function renderCompare(panel, _P, _minT, _maxT, fileName) {
   panel.innerHTML = '<p style="font-size:12px;color:var(--muted)">Loading…</p>';
   const sb = await getSupabase();
   if (!sb) { panel.innerHTML = '<p style="font-size:12px;color:var(--muted)">Supabase unavailable.</p>'; return; }
-  const { data: allLogs, error } = await sb.from('logs').select('*').order('uploaded_at', { ascending: false });
+  const { data: allLogs, error } = await sb.from('logs').select('*').eq('archived', false).order('uploaded_at', { ascending: false });
   if (error) { panel.innerHTML = '<p style="font-size:12px;color:var(--muted)">Failed to load logs.</p>'; return; }
 
   panel.innerHTML = '';
@@ -831,7 +839,7 @@ async function openCompareModal() {
   body.innerHTML = '<p style="font-size:12px;color:var(--muted)">Loading…</p>';
   const sb = await getSupabase();
   if (!sb) { body.innerHTML = '<p style="font-size:12px;color:var(--muted)">Supabase unavailable.</p>'; return; }
-  const { data: allLogs, error } = await sb.from('logs').select('*').order('uploaded_at', { ascending: false });
+  const { data: allLogs, error } = await sb.from('logs').select('*').eq('archived', false).order('uploaded_at', { ascending: false });
   if (error) { body.innerHTML = '<p style="font-size:12px;color:var(--muted)">Failed to load logs.</p>'; return; }
 
   body.innerHTML = '';
@@ -4128,6 +4136,10 @@ function parseAndShow(file, skipSave = false) {
 let _navSequence = []; // filenames in display order for current event
 let _navIndex = -1;    // index of currently-loaded log in _navSequence
 let _navGen = 0;       // incremented on each refresh to discard stale results
+let _showArchived = false;    // hero "Show archived" toggle
+let _currentArchived = false; // archived flag of the currently-loaded log
+
+function _archivedFilter(q) { return _showArchived ? q : q.eq('archived', false); }
 
 async function _refreshNavSequence(fileName) {
   const gen = ++_navGen;
@@ -4136,12 +4148,14 @@ async function _refreshNavSequence(fileName) {
   const sb = await getSupabase();
   if (!sb) return;
   // Prefer the event stored in the DB; fall back to parsing the filename
-  const { data: cur } = await sb.from('logs').select('event,date,time,match_type,match_num')
+  const { data: cur } = await sb.from('logs').select('event,date,time,match_type,match_num,archived')
     .eq('filename', fileName).maybeSingle();
+  _currentArchived = !!cur?.archived;
+  _updateArchiveButton();
   const meta = cur ?? parseWpilogName(fileName);
   const event = meta.event ?? null;
-  // Scope to the same event, or all logs when there is no event
-  let q = sb.from('logs').select('filename,date,time,match_type,match_num')
+  // Scope to the same event, or all logs when there is no event; exclude archived from nav
+  let q = sb.from('logs').select('filename,date,time,match_type,match_num').eq('archived', false)
     .order('date', { ascending: false, nullsFirst: false })
     .order('time', { ascending: false, nullsFirst: false });
   q = event ? q.eq('event', event) : q.is('event', null);
@@ -4191,11 +4205,25 @@ function downloadCurrentLog() {
   reader.readAsDataURL(_currentFile);
 }
 
+function archiveCurrentLog() {
+  if (!_currentFile) return;
+  (_currentArchived ? cloudUnarchiveFile : cloudArchiveFile)(_currentFile.name);
+}
+function _updateArchiveButton() {
+  const btn = document.getElementById('btn-archive-log');
+  if (!btn) return;
+  const dashVisible = document.getElementById('dashboard')?.style.display !== 'none' && !!_currentFile;
+  btn.style.display = dashVisible ? '' : 'none';
+  btn.title = _currentArchived ? 'Unarchive current log' : 'Archive current log';
+  btn.classList.toggle('is-archived', _currentArchived);
+}
+
 function showDashboard(P, fileName, skipSave = false) {
   sessionStorage.setItem('dashboard_active', '1');
   document.getElementById('hero').style.display = 'none';
   document.getElementById('enabled-only-label').style.display = 'flex';
   document.getElementById('btn-download-log').style.display = '';
+  _updateArchiveButton();
   if (skipSave && SUPABASE_CONFIG) {
     // Already in cloud — set permalink immediately
     history.replaceState(null, '', '?log=' + encodeURIComponent(fileName));
@@ -4216,6 +4244,8 @@ function showUpload() {
   document.getElementById('enabled-only-label').style.display = 'none';
   document.getElementById('log-nav').style.display = 'none';
   document.getElementById('btn-download-log').style.display = 'none';
+  _currentArchived = false;
+  _updateArchiveButton();
   document.getElementById('dashboard').style.display = 'none';
 }
 
@@ -4292,6 +4322,31 @@ async function cloudDeleteFile(filename) {
   renderCloudHistory();
 }
 
+async function _cloudSetArchived(filename, archived) {
+  const verb = archived ? 'Archiving' : 'Unarchiving';
+  const toast = createToast(`${verb} ${filename}…`);
+  try {
+    const sb = await getSupabase();
+    if (!sb) throw new Error('Supabase not configured');
+    const { error } = await sb.from('logs').update({ archived }).eq('filename', filename);
+    if (error) throw error;
+    if (_currentFile?.name === filename) {
+      _currentArchived = archived;
+      _updateArchiveButton();
+      _refreshNavSequence(filename);
+    }
+    renderCloudHistory();
+    renderRecentCompare();
+  } catch (e) {
+    console.error(`${verb} failed:`, e);
+    alert(`${verb} failed: ${e.message}`);
+  } finally {
+    toast.dismiss();
+  }
+}
+const cloudArchiveFile   = f => _cloudSetArchived(f, true);
+const cloudUnarchiveFile = f => _cloudSetArchived(f, false);
+
 async function cloudDeleteAll() {
   const sb = await getSupabase();
   if (!sb) return;
@@ -4318,7 +4373,7 @@ async function cloudDeleteAll() {
 async function renderRecentCompare() {
   const sb = await getSupabase();
   if (!sb) return;
-  const { data } = await sb.from('logs').select('*')
+  const { data } = await sb.from('logs').select('*').eq('archived', false)
     .order('date', { ascending: false, nullsFirst: false })
     .order('time', { ascending: false, nullsFirst: false })
     .order('uploaded_at', { ascending: false })
@@ -4362,6 +4417,7 @@ if (SUPABASE_CONFIG) {
   document.getElementById('btn-nav-next')?.addEventListener('click', () => {
     if (_navIndex > 0) loadFromCloud(_navSequence[_navIndex - 1]);
   });
+  document.getElementById('cb-show-archived')?.addEventListener('change', e => { _showArchived = e.target.checked; renderCloudHistory(); });
   document.getElementById('btn-cloud-refresh')?.addEventListener('click', () => { renderCloudHistory(); renderRecentCompare(); });
   document.getElementById('btn-cloud-reprocess')?.addEventListener('click', reprocessAllLogs);
   document.getElementById('btn-cloud-compare')?.addEventListener('click', openCompareModal);
