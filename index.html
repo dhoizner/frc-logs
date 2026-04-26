@@ -183,6 +183,7 @@ tr:hover td{background:var(--surface2)}
   <label id="enabled-only-label" style="display:none;align-items:center;gap:6px;font-size:12px;color:#64748b;cursor:pointer;white-space:nowrap;user-select:none;margin-right:4px">
     <input type="checkbox" id="enabled-only-cb"> Enabled only
   </label>
+  <span id="log-title" style="display:none;font-size:12px;color:var(--muted);white-space:nowrap;margin-right:4px"></span>
   <div id="log-nav" style="display:none;align-items:center;gap:4px">
     <button class="btn" id="btn-nav-prev" style="font-size:13px;padding:4px 10px" title="Previous log (Alt+←)">‹</button>
     <button class="btn" id="btn-nav-next" style="font-size:13px;padding:4px 10px" title="Next log (Alt+→)">›</button>
@@ -383,7 +384,8 @@ async function cloudUpload(file, P) {
     const { error: dbErr } = await sb.from('logs').upsert(row, { onConflict: 'filename' });
     if (dbErr) throw dbErr;
 
-    history.replaceState(null, '', '?log=' + encodeURIComponent(file.name));
+    const _newUrl = '?log=' + encodeURIComponent(file.name);
+    location.search !== _newUrl ? history.pushState(null, '', _newUrl) : history.replaceState(null, '', _newUrl);
     renderCloudHistory();
     toast.dismiss();
   } catch (e) {
@@ -4224,9 +4226,21 @@ function showDashboard(P, fileName, skipSave = false) {
   document.getElementById('enabled-only-label').style.display = 'flex';
   document.getElementById('btn-download-log').style.display = '';
   _updateArchiveButton();
+  const { match_type: _mt, match_num: _mn, date: _d, time: _t } = parseWpilogName(fileName ?? '');
+  const _matchStr = _mt ? `${_mt}${_mn ?? ''}` : '';
+  const _dateStr  = _d ? (_t ? `${_d} ${_t.slice(0,5)}` : _d) : '';
+  const _titleEl = document.getElementById('log-title');
+  if (_titleEl) {
+    const _hasContent = !!(_matchStr || _dateStr);
+    _titleEl.style.display = _hasContent ? '' : 'none';
+    _titleEl.innerHTML = (_matchStr ? `<span class="match-badge badge-${_mt}">${_matchStr}</span>` : '') +
+                         (_dateStr ? `<span>${_matchStr ? ' ' : ''}${_dateStr}</span>` : '');
+  }
+  const _titleText = [_matchStr, _dateStr].filter(Boolean).join(' · ');
+  document.title = _titleText ? `${_titleText} — Tribecbot` : 'Tribecbot Dashboard';
   if (skipSave && SUPABASE_CONFIG) {
-    // Already in cloud — set permalink immediately
-    history.replaceState(null, '', '?log=' + encodeURIComponent(fileName));
+    const _newUrl = '?log=' + encodeURIComponent(fileName);
+    location.search !== _newUrl ? history.pushState(null, '', _newUrl) : history.replaceState(null, '', _newUrl);
   }
 
   const dash = document.getElementById('dashboard');
@@ -4239,11 +4253,13 @@ function showDashboard(P, fileName, skipSave = false) {
 function showUpload() {
   sessionStorage.removeItem('dashboard_active');
   localStorage.removeItem('tribecbot-active-tab');
-  history.replaceState(null, '', location.pathname);
+  if (location.search) history.pushState(null, '', location.pathname);
   document.getElementById('hero').style.display = '';
   document.getElementById('enabled-only-label').style.display = 'none';
   document.getElementById('log-nav').style.display = 'none';
+  document.getElementById('log-title').style.display = 'none';
   document.getElementById('btn-download-log').style.display = 'none';
+  document.title = 'Tribecbot Dashboard';
   _currentArchived = false;
   _updateArchiveButton();
   document.getElementById('dashboard').style.display = 'none';
@@ -4424,6 +4440,12 @@ if (SUPABASE_CONFIG) {
   renderCloudHistory();
   renderRecentCompare();
 }
+
+window.addEventListener('popstate', () => {
+  const log = new URLSearchParams(location.search).get('log');
+  if (log && SUPABASE_CONFIG) loadFromCloud(log);
+  else showUpload();
+});
 </script>
 </body>
 </html>
