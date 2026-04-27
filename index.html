@@ -44,11 +44,13 @@ main{padding:0}
 #zoom-bar{display:flex;align-items:center;gap:10px;padding:6px 16px;background:var(--surface);border-top:1px solid var(--border);user-select:none}
 #zoom-track-wrap{flex:1;display:flex;flex-direction:column;gap:2px}
 #zoom-track{position:relative;height:16px;background:var(--surface2);border-radius:3px;cursor:crosshair}
-#zoom-brush{position:absolute;top:0;bottom:0;left:0;right:0;background:rgba(239,68,68,0.12);border-left:2px solid var(--accent);border-right:2px solid var(--accent);border-radius:2px;cursor:crosshair;pointer-events:none}
+#zoom-brush{position:absolute;top:0;bottom:0;left:0;right:0;background:transparent;border-left:2px solid var(--accent);border-right:2px solid var(--accent);border-radius:2px;cursor:crosshair;pointer-events:none}
+.zoom-dim{position:absolute;top:0;bottom:0;background:rgba(0,0,0,0.55);pointer-events:none;z-index:1;transition:left .05s,right .05s,width .05s}
 .zoom-handle{position:absolute;top:0;bottom:0;width:12px;cursor:ew-resize;z-index:1;pointer-events:auto}
 #zoom-handle-l{left:-6px}
 #zoom-handle-r{right:-6px}
 #zoom-axis{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);pointer-events:none}
+#zoom-tooltip{position:fixed;z-index:9999;background:#1e293b;border:1px solid #334155;border-radius:5px;padding:4px 8px;font-size:11px;color:#e2e8f0;pointer-events:none;white-space:nowrap;display:none;box-shadow:0 2px 6px rgba(0,0,0,.4)}
 #zoom-label{font-size:11px;color:var(--muted);white-space:nowrap;min-width:140px;text-align:right}
 #panels{padding:16px 20px;width:100%}
 .tab-panel{display:block}.tab-panel.hidden{display:none}
@@ -265,17 +267,21 @@ tr:hover td{background:var(--surface2)}
     <div id="zoom-bar">
       <div id="zoom-track-wrap">
         <div id="zoom-track">
+          <div class="zoom-dim" id="zoom-dim-l" style="left:0;width:0"></div>
+          <div class="zoom-dim" id="zoom-dim-r" style="right:0;width:0"></div>
           <div id="zoom-brush">
             <div id="zoom-handle-l" class="zoom-handle"></div>
             <div id="zoom-handle-r" class="zoom-handle"></div>
           </div>
         </div>
         <div id="zoom-axis"></div>
+        <div style="font-size:10px;color:var(--muted);margin-top:1px">Drag to select range &nbsp;·&nbsp; Drag handles to resize &nbsp;·&nbsp; Double-click an enabled period to zoom to it &nbsp;·&nbsp; <span style="color:#22c55e">■</span> Autonomous &nbsp;<span style="color:#3b82f6">■</span> Teleop</div>
       </div>
       <div id="zoom-label"></div>
       <button class="btn" onclick="resetAllZoom()" style="font-size:11px;padding:2px 10px;white-space:nowrap">Reset Zoom</button>
     </div>
     </div><!-- /sticky-nav -->
+  <div id="zoom-tooltip"></div>
     <div id="panels"></div>
   </div>
 </main>
@@ -1173,6 +1179,7 @@ const _timelineRenders = [];
 let _currentZoom = null;
 let _timelineDragState = null; // { wrap, sel, entry, startT }
 let _disabledIntervals = []; // computed per log, used by renderTimeline overlays
+let _enabledIntervals  = []; // [start, end, isAuto] — green for auto, blue for teleop
 
 const ZOOM_OPTS = {
   zoom: { drag: { enabled: true }, pinch: { enabled: true }, mode: 'x',
@@ -1223,12 +1230,18 @@ function _updateZoomBar(visMin, visMax) {
   const { minT, maxT } = _zoomBarData;
   const brush = document.getElementById('zoom-brush');
   const label = document.getElementById('zoom-label');
+  const dimL  = document.getElementById('zoom-dim-l');
+  const dimR  = document.getElementById('zoom-dim-r');
   if (!brush || !label) return;
   const totalSpan = maxT - minT || 1;
   const vMin = visMin ?? minT;
   const vMax = visMax ?? maxT;
-  brush.style.left  = ((vMin - minT) / totalSpan * 100) + '%';
-  brush.style.right = ((maxT - vMax) / totalSpan * 100) + '%';
+  const leftPct  = (vMin - minT) / totalSpan * 100;
+  const rightPct = (maxT - vMax) / totalSpan * 100;
+  brush.style.left  = leftPct + '%';
+  brush.style.right = rightPct + '%';
+  if (dimL) { dimL.style.left = '0'; dimL.style.width = leftPct + '%'; }
+  if (dimR) { dimR.style.right = '0'; dimR.style.width = rightPct + '%'; }
   label.textContent = (visMin == null)
     ? `${minT.toFixed(1)}s – ${maxT.toFixed(1)}s`
     : `${vMin.toFixed(2)}s – ${vMax.toFixed(2)}s`;
@@ -1343,23 +1356,15 @@ function initZoomBar(minT, maxT) {
   const rh    = document.getElementById('zoom-handle-r');
   if (!track || !brush || !lh || !rh) return;
 
-  // Enabled-period indicators: green segments, inserted before the brush
+  // Enabled-period indicators: green for autonomous, blue for teleop
   track.querySelectorAll('.zoom-en-seg').forEach(el => el.remove());
   const totalSpan = maxT - minT || 1;
-  let disPos = minT;
-  for (const [ds, de] of _disabledIntervals) {
-    if (ds > disPos) {
-      const seg = document.createElement('div');
-      seg.className = 'zoom-en-seg';
-      seg.style.cssText = `position:absolute;top:0;bottom:0;left:${(disPos-minT)/totalSpan*100}%;width:${(ds-disPos)/totalSpan*100}%;background:rgba(34,197,94,0.28);pointer-events:none`;
-      track.insertBefore(seg, brush);
-    }
-    disPos = de;
-  }
-  if (disPos < maxT) {
+  for (const [start, end, isAuto] of _enabledIntervals) {
+    if (end <= start) continue;
     const seg = document.createElement('div');
     seg.className = 'zoom-en-seg';
-    seg.style.cssText = `position:absolute;top:0;bottom:0;left:${(disPos-minT)/totalSpan*100}%;width:${(maxT-disPos)/totalSpan*100}%;background:rgba(34,197,94,0.28);pointer-events:none`;
+    const color = isAuto ? '#22c55e' : '#1e50dc';
+    seg.style.cssText = `position:absolute;top:0;bottom:0;left:${(start-minT)/totalSpan*100}%;width:${(end-start)/totalSpan*100}%;background:${color};pointer-events:none`;
     track.insertBefore(seg, brush);
   }
 
@@ -1369,6 +1374,30 @@ function initZoomBar(minT, maxT) {
     const r = track.getBoundingClientRect();
     return minT + Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * (maxT - minT);
   }
+
+  const zoomTip = document.getElementById('zoom-tooltip');
+  track.addEventListener('mousemove', e => {
+    const t = tFromX(e.clientX);
+    const seg = _enabledIntervals.find(([s, end]) => t >= s && t < end);
+    let label, color;
+    if (seg) {
+      label = seg[2] ? 'Autonomous · Enabled' : 'Teleop · Enabled';
+      color = seg[2] ? '#22c55e' : '#3b82f6';
+    } else {
+      label = 'Disabled';
+      color = '#94a3b8';
+    }
+    zoomTip.innerHTML = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${color};margin-right:5px;vertical-align:middle"></span>${label}`;
+    zoomTip.style.display = 'block';
+    zoomTip.style.left = (e.clientX + 12) + 'px';
+    zoomTip.style.top  = (e.clientY - 28) + 'px';
+  }, { signal: sig });
+  track.addEventListener('mouseleave', () => { zoomTip.style.display = 'none'; }, { signal: sig });
+  track.addEventListener('dblclick', e => {
+    const t = tFromX(e.clientX);
+    const seg = _enabledIntervals.find(([s, end]) => t >= s && t < end);
+    if (seg) _applyZoom(seg[0], seg[1]);
+  }, { signal: sig });
 
   lh.addEventListener('mousedown', e => {
     e.stopPropagation(); e.preventDefault();
@@ -4000,19 +4029,30 @@ function initTabs(P, fileName) {
     { id: 'diagnostics',   label: 'Diagnostics',        render: renderDiagnostics },
   ];
 
-  // Compute disabled intervals from DS:enabled for timeline overlays
+  // Compute disabled/enabled intervals from DS:enabled for timeline overlays
   (function() {
     const enabledS = P.get('DS:enabled');
+    const autoS    = P.get('DS:autonomous');
     const disabled = [];
+    const enabled  = [];
+    function isAutoAt(t) {
+      let last = false;
+      for (const { ts, val } of autoS) { if (ts > t) break; last = val; }
+      return last;
+    }
     let pos = minT;
     for (let i = 0; i < enabledS.length; i++) {
       if (enabledS[i].val) {
-        if (enabledS[i].ts > pos) disabled.push([pos, enabledS[i].ts]);
-        pos = i + 1 < enabledS.length ? enabledS[i+1].ts : maxT;
+        const start = enabledS[i].ts;
+        const end   = i + 1 < enabledS.length ? enabledS[i+1].ts : maxT;
+        if (start > pos) disabled.push([pos, start]);
+        enabled.push([start, end, isAutoAt(start)]);
+        pos = end;
       }
     }
     if (pos < maxT) disabled.push([pos, maxT]);
     _disabledIntervals = disabled;
+    _enabledIntervals  = enabled;
   })();
 
   const tabbar = document.getElementById('tabbar');
