@@ -1686,14 +1686,15 @@ function renderTimeline(parent, rows, minT, maxT) {
 // ================================================================
 // CB285 trip curve: columns = [multiple-of-120A, lower-trip-s, upper-trip-s]
 const CB285 = [
-  [1.0, Infinity, Infinity],
-  [1.1, 60, 120],
-  [1.25, 10, 30],
-  [1.5, 3, 10],
-  [2.0, 1.0, 3.0],
-  [3.0, 0.2, 0.6],
-  [5.0, 0.05, 0.12],
-  [10.0, 0.008, 0.02],
+  [1.0,  Infinity, Infinity],
+  [1.1,  100,      500     ],
+  [1.25,  22,      200     ],
+  [1.5,   12,      100     ],
+  [2.0,   10,       40     ],
+  [3.0,   4.9,     12.5    ],
+  [4.0,   2.5,      6      ],
+  [5.0,   1.0,      3      ],
+  [6.0,   0.5,      2.5    ],
 ];
 const RATED_A = 120;
 
@@ -3014,7 +3015,7 @@ function renderPower(panel, P, minT, maxT) {
   if (totalCurr.length) {
     section(panel, 'Breaker Trip Curve (CB285, 120 A rated)', d => {
       const note = document.createElement('div'); note.className = 'info-box';
-      note.textContent = 'Scatter: each excursion above threshold. X = duration (log scale), Y = peak current. Lines: CB285 lower / upper trip boundaries. Points to the right of the upper curve lasted longer than the maximum trip time — breaker almost certainly tripped. Points between the curves are uncertain. Points left of the lower curve were too brief to trip.';
+      note.innerHTML = 'Scatter: each excursion above threshold. X = duration (log scale), Y = peak current. Lines: CB285 lower / upper trip boundaries. Points to the right of the upper curve lasted longer than the maximum trip time — breaker almost certainly tripped. Points between the curves are uncertain. Points left of the lower curve were too brief to trip. Trip curve digitized from <a href="https://www.bluesea.com/products/7188/285-Series_Circuit_Breaker_-_Surface_Mount_120A" target="_blank" rel="noopener" style="color:var(--accent)">Blue Sea Systems 285-Series 120A datasheet</a>.';
       d.appendChild(note);
 
       const exs120 = findExcursions(totalCurr, 120);
