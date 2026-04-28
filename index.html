@@ -1160,11 +1160,13 @@ function lastVal(samples) { return samples.length ? samples[samples.length-1].va
 function avgVal(samples)  { if(!samples.length) return null; let s=0; for(const x of samples) s+=x.val; return s/samples.length; }
 
 function motorKpis(d, motors) {
-  const tiles = motors.flatMap(({ label, curr }) => [
-    { label: `${label} Peak (A)`, value: fmt(peakVal(curr), 1), unit: 'A' },
-    { label: `${label} Mean (A)`, value: fmt(avgVal(curr),  1), unit: 'A' },
-  ]).filter(t => t.value !== '—');
-  if (tiles.length) kpis(d, tiles);
+  liveKpis(d, (lo, hi) => motors.flatMap(({ label, curr }) => {
+    const f = curr.filter(s => s.ts >= lo && s.ts <= hi);
+    return [
+      { label: `${label} Peak (A)`, value: fmt(peakVal(f), 1), unit: 'A' },
+      { label: `${label} Mean (A)`, value: fmt(avgVal(f),  1), unit: 'A' },
+    ];
+  }).filter(t => t.value !== '—'));
 }
 
 function fmt(v, dec=2, unit='') {
@@ -1177,6 +1179,7 @@ function fmt(v, dec=2, unit='') {
 // ================================================================
 const _charts = [];
 const _timelineRenders = [];
+const _liveKpis = [];
 let _currentZoom = null;
 let _timelineDragState = null; // { wrap, sel, entry, startT, startX }
 let _disabledIntervals = []; // computed per log, used by renderTimeline overlays
@@ -1373,6 +1376,7 @@ function _applyZoom(visMin, visMax) {
   for (const entry of _timelineRenders) {
     _rerenderTimeline(entry, visMin, visMax);
   }
+  _updateLiveKpis(visMin, visMax);
 }
 
 function syncZoom(source) {
@@ -1389,6 +1393,7 @@ function syncZoom(source) {
   for (const entry of _timelineRenders) {
     _rerenderTimeline(entry, visMin, visMax);
   }
+  _updateLiveKpis(visMin, visMax);
 }
 
 function resetAllZoom() {
@@ -1407,6 +1412,7 @@ function resetAllZoom() {
   for (const entry of _timelineRenders) {
     _rerenderTimeline(entry, entry.origMinT, entry.origMaxT);
   }
+  if (_zoomBarData) _updateLiveKpis(_zoomBarData.minT, _zoomBarData.maxT);
 }
 
 // Global handlers for timeline drag-to-zoom (registered once)
@@ -1845,6 +1851,25 @@ function kpis(parent, tiles) {
   parent.appendChild(g);
 }
 
+function liveKpis(parent, computeFn) {
+  const g = document.createElement('div'); g.className = 'kpi-grid';
+  parent.appendChild(g);
+  function render(lo, hi) {
+    const tiles = computeFn(lo, hi);
+    g.innerHTML = '';
+    for (const { label, value, unit, valueColor } of tiles) {
+      const d = document.createElement('div'); d.className = 'kpi';
+      const cs = valueColor ? ` style="color:${valueColor}"` : '';
+      d.innerHTML = `<div class="label">${label}</div><div class="value"${cs}>${value}${unit ? '<span class="unit">'+unit+'</span>' : ''}</div>`;
+      g.appendChild(d);
+    }
+  }
+  const vis = _currentZoom ?? (_zoomBarData ? { min: _zoomBarData.minT, max: _zoomBarData.maxT } : null);
+  if (vis) render(vis.min, vis.max);
+  _liveKpis.push(render);
+}
+function _updateLiveKpis(lo, hi) { for (const r of _liveKpis) r(lo, hi); }
+
 // ================================================================
 // DISCRETE TIMELINE
 // ================================================================
@@ -2133,30 +2158,139 @@ function renderOverview(panel, P, minT, maxT, fileName) {
   const sotmStoppedPct = stoppedTimerPct(sotmTimerS, 'SOTM');
   const fotmStoppedPct = stoppedTimerPct(fotmTimerS, 'FOTM');
 
+  // Capture raw refs for live KPI recomputation on zoom change
+  const _overviewRaw = {
+    stateS, readyS, shouldStopS, shooterAtTolS, hoodAtTolS, turretAtTolS,
+    battV, energyWh, totalCurr: P.get('EnergyUtil/Total current Current'),
+    robotTotalCurr: P.get('Robot/Total Current Draw'),
+    velX, velY, poseSamples,
+    enabledS: P.get('DS:enabled'),
+    sotmTimerS: P.get('Superstructure/SOTM Stopped Timer'),
+    fotmTimerS: P.get('Superstructure/FOTM Stopped Timer'),
+  };
+  function computeMatchKpis(lo, hi) {
+    const clip = a => a.filter(s => s.ts >= lo && s.ts <= hi);
+    const stateS = clip(_overviewRaw.stateS);
+    const readyS = clip(_overviewRaw.readyS);
+    const shouldStopS = clip(_overviewRaw.shouldStopS);
+    const shooterAtTolS = clip(_overviewRaw.shooterAtTolS);
+    const hoodAtTolS  = clip(_overviewRaw.hoodAtTolS);
+    const turretAtTolS = clip(_overviewRaw.turretAtTolS);
+    const battV       = clip(_overviewRaw.battV);
+    const energyWh    = clip(_overviewRaw.energyWh);
+    const enabledS    = clip(_overviewRaw.enabledS);
+    const velX        = clip(_overviewRaw.velX);
+    const velY        = clip(_overviewRaw.velY);
+    const poseSamples = clip(_overviewRaw.poseSamples);
+    const sotmTimerS  = clip(_overviewRaw.sotmTimerS);
+    const fotmTimerS  = clip(_overviewRaw.fotmTimerS);
+    const robotTotalCurr = clip(_overviewRaw.robotTotalCurr);
+
+    let peakVel2 = null;
+    if (velX.length && velY.length) {
+      const velXMap = new Map(velX.map(s => [s.ts.toFixed(3), s.val]));
+      let pk = 0;
+      for (const { ts, val } of velY) { const x = velXMap.get(ts.toFixed(3)) ?? 0; const mag = Math.sqrt(x*x+val*val); if (mag > pk) pk = mag; }
+      peakVel2 = pk;
+    }
+    let overrunCount2 = 0;
+    if (poseSamples.length > 1) { for (let i = 1; i < poseSamples.length; i++) if (poseSamples[i].ts - poseSamples[i-1].ts > 0.035) overrunCount2++; }
+    let timeEnabled2 = null;
+    if (enabledS.length > 1) { let acc = 0; for (let i = 0; i < enabledS.length - 1; i++) if (enabledS[i].val) acc += enabledS[i+1].ts - enabledS[i].ts; timeEnabled2 = acc; }
+
+    const enabledIvs = [];
+    for (let i = 0; i < enabledS.length - 1; i++) if (enabledS[i].val) enabledIvs.push([enabledS[i].ts, enabledS[i+1].ts]);
+    function enOv(t0, t1) { if (!enabledIvs.length) return t1-t0; let o=0; for (const [es,ee] of enabledIvs){const s=Math.max(t0,es),e=Math.min(t1,ee);if(e>s)o+=e-s;} return o; }
+
+    function stateIntervals(name) {
+      const ivs = [];
+      for (let i = 0; i < stateS.length; i++) {
+        if (stateS[i].val === name) ivs.push([stateS[i].ts, i+1 < stateS.length ? stateS[i+1].ts : hi]);
+      }
+      return ivs;
+    }
+    function clipSamplesToIvs(samples, ivs) {
+      const out = []; let si = 0;
+      for (const [start, end] of ivs) {
+        while (si < samples.length && samples[si].ts < start) si++;
+        let j = si; while (j < samples.length && samples[j].ts < end) { out.push(samples[j]); j++; }
+      }
+      return out;
+    }
+    function pctNotStopped2(stateName) {
+      if (!enabledIvs.length) return null;
+      const clipped = clipSamplesToIvs(shouldStopS, stateIntervals(stateName));
+      if (!clipped.length) return null;
+      let tot = 0, free = 0;
+      for (let i = 0; i < clipped.length - 1; i++) { const dt = enOv(clipped[i].ts, clipped[i+1].ts); tot += dt; if (!clipped[i].val) free += dt; }
+      return tot > 0 ? (free / tot * 100) : null;
+    }
+    function pctTrue2(boolSamples, ...states) {
+      if (!boolSamples.length || !stateS.length) return null;
+      const toIvs = s => { const r=[];let st=null; for(const{ts,val}of s){if(val&&st===null)st=ts;else if(!val&&st!==null){r.push([st,ts]);st=null;}} if(st!==null)r.push([st,s[s.length-1].ts]); return r; };
+      const isect = (a,b) => { let t=0; for(const[a0,a1]of a)for(const[b0,b1]of b){const s=Math.max(a0,b0),e=Math.min(a1,b1);if(e>s)t+=e-s;} return t; };
+      const stateIvs = states.flatMap(n => stateIntervals(n));
+      const notStoppedIvs = toIvs(shouldStopS.map(s => ({ ts: s.ts, val: !s.val })));
+      const activeIvs = [];
+      for (const [a0,a1] of stateIvs) for (const [b0,b1] of notStoppedIvs) { const s=Math.max(a0,b0),e=Math.min(a1,b1); if(e>s) activeIvs.push([s,e]); }
+      const activeDur = activeIvs.reduce((s,[a,b])=>s+(b-a),0);
+      if (activeDur === 0) return null;
+      return Math.min(isect(toIvs(boolSamples), activeIvs) / activeDur * 100, 100);
+    }
+    function stoppedPct2(timerSamples, stateName) {
+      if (!timerSamples.length || !stateS.length) return null;
+      let dur = 0;
+      for (const [s, e] of stateIntervals(stateName)) dur += Math.max(0, e - s);
+      if (dur === 0) return null;
+      const peak = peakVal(timerSamples);
+      if (peak === null || peak <= 0) return 0;
+      return Math.min(peak / dur * 100, 100);
+    }
+
+    let sotmMeanLat2 = null, sotmMaxLat2 = null;
+    if (stateS.length && readyS.length) {
+      const lats = [];
+      for (let i = 1; i < stateS.length; i++) {
+        if (stateS[i].val === 'SOTM' && stateS[i-1].val !== 'SOTM') {
+          const entryTs = stateS[i].ts;
+          const nextChg = stateS.find(st => st.ts > entryTs && st.val !== 'SOTM');
+          const sotmEnd = nextChg ? nextChg.ts : hi;
+          const hit = readyS.find(r => r.ts >= entryTs && r.ts <= sotmEnd && r.val === true);
+          if (hit) lats.push(hit.ts - entryTs);
+        }
+      }
+      if (lats.length) { sotmMeanLat2 = lats.reduce((a,b)=>a+b,0)/lats.length; sotmMaxLat2 = Math.max(...lats); }
+    }
+
+    const stoppedColor = v => v !== null ? (v < 10 ? 'var(--green)' : v < 30 ? 'var(--yellow)' : 'var(--red)') : undefined;
+    const readyColor2 = v => v === null ? undefined : v >= 80 ? 'var(--green)' : v >= 50 ? 'var(--yellow)' : 'var(--red)';
+    const sotmStopped = stoppedPct2(sotmTimerS, 'SOTM');
+    const fotmStopped = stoppedPct2(fotmTimerS, 'FOTM');
+    const energyDelta = energyWh.length >= 2 ? energyWh[energyWh.length-1].val - energyWh[0].val : lastVal(energyWh);
+    return [
+      { label: 'SOTM Stopped %',           value: fmt(sotmStopped, 1), unit: '%', valueColor: stoppedColor(sotmStopped) },
+      { label: 'FOTM Stopped %',           value: fmt(fotmStopped, 1), unit: '%', valueColor: stoppedColor(fotmStopped) },
+      { label: 'Starting Battery V',        value: fmt(battV[0]?.val ?? null, 2), unit: 'V' },
+      { label: 'Min Battery Voltage',       value: fmt(minVal(battV), 1), unit: 'V' },
+      { label: 'Energy Used',               value: fmt(energyDelta, 2), unit: 'Wh' },
+      { label: 'Peak Total Current',        value: fmt(peakVal(robotTotalCurr), 0), unit: 'A' },
+      { label: 'Peak Swerve Speed',         value: fmt(peakVel2, 2), unit: 'm/s' },
+      { label: 'Loop Overruns',             value: String(overrunCount2), unit: '', valueColor: overrunCount2 < 5 ? 'var(--green)' : 'var(--red)' },
+      { label: 'Duration',                  value: fmt(hi - lo, 1), unit: 's' },
+      { label: 'Time Enabled',              value: fmt(timeEnabled2, 1), unit: 's' },
+      ...[['SOTM Ready %','SOTM'],['FOTM Ready %','FOTM']].map(([lbl,st]) => { const v=pctNotStopped2(st); return { label:lbl, value:fmt(v,1), unit:'%', valueColor:readyColor2(v) }; }),
+      { label: 'Mean SOTM Startup',         value: fmt(sotmMeanLat2, 2), unit: 's' },
+      { label: 'Max SOTM Startup',          value: fmt(sotmMaxLat2,  2), unit: 's' },
+      ...[['Shooter Ready % (active)',shooterAtTolS],['Hood Ready % (active)',hoodAtTolS],['Turret Ready % (active)',turretAtTolS]].map(([lbl,s]) => { const v=pctTrue2(s,'SOTM','FOTM'); return { label:lbl, value:fmt(v,1), unit:'%', valueColor:readyColor2(v) }; }),
+    ];
+  }
+
   const { date: _d, time: _t, match_type: _mt, match_num: _mn } = parseWpilogName(fileName ?? '');
   const _matchStr = _mt ? `${_mt}${_mn ?? ''}` : '';
   const _dateStr  = _d ? (_t ? `${_d} ${_t.slice(0, 5)}` : _d) : '';
   const _subtitle = [_matchStr, _dateStr].filter(Boolean).join(' · ');
   section(panel, _subtitle ? `Match Summary — ${_subtitle}` : 'Match Summary', d => {
-    kpis(d, [
-      { label: 'SOTM Stopped %', value: fmt(sotmStoppedPct, 1), unit: '%', valueColor: sotmStoppedPct !== null ? (sotmStoppedPct < 10 ? 'var(--green)' : sotmStoppedPct < 30 ? 'var(--yellow)' : 'var(--red)') : undefined },
-      { label: 'FOTM Stopped %', value: fmt(fotmStoppedPct, 1), unit: '%', valueColor: fotmStoppedPct !== null ? (fotmStoppedPct < 10 ? 'var(--green)' : fotmStoppedPct < 30 ? 'var(--yellow)' : 'var(--red)') : undefined },
-      { label: 'Starting Battery V',  value: fmt(battV.length ? battV[0].val : null, 2), unit: 'V' },
-      { label: 'Min Battery Voltage', value: fmt(minVal(battV), 1), unit: 'V' },
-      { label: 'Total Energy Used',   value: fmt(lastVal(energyWh), 2), unit: 'Wh' },
-      { label: 'Peak Total Current',  value: fmt(peakInstCurrent, 0), unit: 'A' },
-      { label: 'Peak Swerve Speed',   value: fmt(peakVel, 2), unit: 'm/s' },
-      { label: 'Loop Overruns',       value: String(overrunCount), unit: '', valueColor: overrunCount < 5 ? 'var(--green)' : 'var(--red)' },
-      { label: 'Log Duration',        value: fmt(maxT - minT, 1), unit: 's' },
-      { label: 'Time Enabled',        value: fmt(timeEnabled, 1), unit: 's' },
-      { label: 'SOTM Ready %',          value: fmt(sotmFreePct,     1), unit: '%', valueColor: readyColor(sotmFreePct) },
-      { label: 'FOTM Ready %',          value: fmt(fotmFreePct,     1), unit: '%', valueColor: readyColor(fotmFreePct) },
-      { label: 'Mean SOTM Startup',     value: fmt(sotmMeanLatency, 2), unit: 's' },
-      { label: 'Max SOTM Startup',      value: fmt(sotmMaxLatency,  2), unit: 's' },
-      { label: 'Shooter Ready % (active)',     value: fmt(shooterReadyPct, 1), unit: '%', valueColor: readyColor(shooterReadyPct) },
-      { label: 'Hood Ready % (active)',        value: fmt(hoodReadyPct,    1), unit: '%', valueColor: readyColor(hoodReadyPct)    },
-      { label: 'Turret Ready % (active)',      value: fmt(turretReadyPct,  1), unit: '%', valueColor: readyColor(turretReadyPct)  },
-    ]);
+    liveKpis(d, computeMatchKpis);
   });
 
   section(panel, 'Superstructure State Timeline', d => {
@@ -2528,12 +2662,31 @@ function renderSuperstructure(panel, P, minT, maxT) {
         const maxLatency  = validPts.length ? Math.max(...validPts.map(p => p.latency)) : null;
         const neverReady  = points.length - validPts.length;
 
-        kpis(s, [
-          { label: 'SOTM Entries',       value: String(points.length),       unit: '' },
-          { label: 'Never Ready',        value: String(neverReady),          unit: '', valueColor: neverReady > 0 ? 'var(--red)' : 'var(--green)' },
-          { label: 'Mean Time to Ready', value: fmt(meanLatency, 2),         unit: 's' },
-          { label: 'Max Time to Ready',  value: fmt(maxLatency,  2),         unit: 's' },
-        ]);
+        const _sotmRaw = { stateS, readyS };
+        liveKpis(s, (lo, hi) => {
+          const clip = a => a.filter(x => x.ts >= lo && x.ts <= hi);
+          const fState = clip(_sotmRaw.stateS), fReady = clip(_sotmRaw.readyS);
+          const pts = [];
+          for (let i = 1; i < fState.length; i++) {
+            if (fState[i].val === 'SOTM' && fState[i-1].val !== 'SOTM') {
+              const entryTs = fState[i].ts;
+              const nextChg = fState.find(st => st.ts > entryTs && st.val !== 'SOTM');
+              const end = nextChg ? nextChg.ts : hi;
+              const hit = fReady.find(r => r.ts >= entryTs && r.ts <= end && r.val === true);
+              pts.push({ entryTs, latency: hit ? hit.ts - entryTs : null });
+            }
+          }
+          const valid = pts.filter(p => p.latency !== null);
+          const mean = valid.length ? valid.reduce((s,p)=>s+p.latency,0)/valid.length : null;
+          const max  = valid.length ? Math.max(...valid.map(p=>p.latency)) : null;
+          const never = pts.length - valid.length;
+          return [
+            { label: 'SOTM Entries',       value: String(pts.length), unit: '' },
+            { label: 'Never Ready',        value: String(never), unit: '', valueColor: never > 0 ? 'var(--red)' : 'var(--green)' },
+            { label: 'Mean Time to Ready', value: fmt(mean, 2), unit: 's' },
+            { label: 'Max Time to Ready',  value: fmt(max,  2), unit: 's' },
+          ];
+        });
 
         if (!validPts.length) return noData(s, 'Robot never became ready within a SOTM window.');
 
@@ -2605,12 +2758,32 @@ function renderSuperstructure(panel, P, minT, maxT) {
         const { dur: sotmDur, pct: sp } = localStateStats(sotmTimerS2, 'SOTM');
         const { dur: fotmDur, pct: fp } = localStateStats(fotmTimerS2, 'FOTM');
         const stoppedColor = v => v === null ? undefined : v < 10 ? 'var(--green)' : v < 30 ? 'var(--yellow)' : 'var(--red)';
-        kpis(s, [
-          { label: 'SOTM Time',      value: fmt(sotmDur, 1), unit: 's' },
-          { label: 'FOTM Time',      value: fmt(fotmDur, 1), unit: 's' },
-          { label: 'SOTM Stopped %', value: fmt(sp, 1), unit: '%', valueColor: stoppedColor(sp) },
-          { label: 'FOTM Stopped %', value: fmt(fp, 1), unit: '%', valueColor: stoppedColor(fp) },
-        ]);
+        const _timerRaw = { stateS, sotmTimerS2, fotmTimerS2 };
+        liveKpis(s, (lo, hi) => {
+          const clip = a => a.filter(x => x.ts >= lo && x.ts <= hi);
+          const fState = clip(_timerRaw.stateS);
+          function stats(timer, name) {
+            const fTimer = clip(timer);
+            let dur = 0;
+            for (let i = 0; i < fState.length; i++) {
+              if (fState[i].val === name) {
+                const s = fState[i].ts, e = i+1 < fState.length ? fState[i+1].ts : hi;
+                dur += Math.max(0, e - s);
+              }
+            }
+            const peak = peakVal(fTimer);
+            const pct = dur > 0 && peak !== null && peak > 0 ? Math.max(0, Math.min(peak/dur*100, 100)) : dur > 0 ? 0 : null;
+            return { dur: dur > 0 ? dur : null, pct };
+          }
+          const { dur: sd, pct: s2 } = stats(_timerRaw.sotmTimerS2, 'SOTM');
+          const { dur: fd, pct: f2 } = stats(_timerRaw.fotmTimerS2, 'FOTM');
+          return [
+            { label: 'SOTM Time',      value: fmt(sd, 1), unit: 's' },
+            { label: 'FOTM Time',      value: fmt(fd, 1), unit: 's' },
+            { label: 'SOTM Stopped %', value: fmt(s2, 1), unit: '%', valueColor: stoppedColor(s2) },
+            { label: 'FOTM Stopped %', value: fmt(f2, 1), unit: '%', valueColor: stoppedColor(f2) },
+          ];
+        });
         const ds = [];
         if (sotmTimerS2.length) ds.push(lineDataset('SOTM Stopped', toXY(sotmTimerS2), '#f97316'));
         if (fotmTimerS2.length) ds.push(lineDataset('FOTM Stopped', toXY(fotmTimerS2), '#ec4899'));
@@ -3127,20 +3300,24 @@ function renderPower(panel, P, minT, maxT) {
   panel.appendChild(srcNote);
 
   // KPIs
+  const _energyRaw = { totalCurr, totalPower, usedWh, battV };
   section(panel, 'Energy Summary', d => {
-    const pkCurr  = peakVal(totalCurr);
-    const avgPow  = avgVal(totalPower);
-    const totalWh = lastVal(usedWh);
-    const startV  = (battV.find(s => s.ts >= minT) ?? battV[0])?.val ?? null;
-    const endV    = ([...battV].reverse().find(s => s.ts <= maxT) ?? battV[battV.length - 1])?.val ?? null;
-    kpis(d, [
-      { label: 'Total Energy',   value: fmt(totalWh, 2), unit: 'Wh' },
-      { label: 'Peak Current',   value: fmt(pkCurr, 0),  unit: 'A' },
-      { label: 'Avg Power',      value: fmt(avgPow, 0),  unit: 'W' },
-      { label: 'Start Battery V', value: fmt(startV, 2), unit: 'V' },
-      { label: 'Min Battery V',  value: fmt(minVal(battV), 1), unit: 'V' },
-      { label: 'End Battery V',  value: fmt(endV, 2),    unit: 'V' },
-    ]);
+    liveKpis(d, (lo, hi) => {
+      const clip = a => a.filter(s => s.ts >= lo && s.ts <= hi);
+      const fCurr  = clip(_energyRaw.totalCurr);
+      const fPow   = clip(_energyRaw.totalPower);
+      const fWh    = clip(_energyRaw.usedWh);
+      const fBattV = clip(_energyRaw.battV);
+      const whDelta = fWh.length >= 2 ? fWh[fWh.length-1].val - fWh[0].val : lastVal(fWh);
+      return [
+        { label: 'Energy Used',     value: fmt(whDelta, 2),          unit: 'Wh' },
+        { label: 'Peak Current',    value: fmt(peakVal(fCurr), 0),   unit: 'A' },
+        { label: 'Avg Power',       value: fmt(avgVal(fPow), 0),     unit: 'W' },
+        { label: 'Start Battery V', value: fmt(fBattV[0]?.val ?? null, 2), unit: 'V' },
+        { label: 'Min Battery V',   value: fmt(minVal(fBattV), 1),   unit: 'V' },
+        { label: 'End Battery V',   value: fmt(fBattV[fBattV.length-1]?.val ?? null, 2), unit: 'V' },
+      ];
+    });
   });
 
   // 1. Battery voltage
@@ -4302,6 +4479,7 @@ function initTabs(P, fileName) {
   panels.innerHTML = '';
   _charts.length = 0;
   _timelineRenders.length = 0;
+  _liveKpis.length = 0;
   _currentZoom = null;
   _timelineDragState = null;
   _zoomBarData = null;
