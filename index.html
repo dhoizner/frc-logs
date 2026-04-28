@@ -273,6 +273,7 @@ tr:hover td{background:var(--surface2)}
             <div id="zoom-handle-l" class="zoom-handle"></div>
             <div id="zoom-handle-r" class="zoom-handle"></div>
           </div>
+          <div id="zoom-pin" style="position:absolute;top:0;bottom:0;width:2px;background:#f59e0b;pointer-events:none;display:none;z-index:5;transform:translateX(-50%)"></div>
         </div>
         <div id="zoom-axis"></div>
         <div style="font-size:10px;color:var(--muted);margin-top:1px">Drag to select range &nbsp;·&nbsp; Drag handles to resize &nbsp;·&nbsp; Double-click an enabled period to zoom to it &nbsp;·&nbsp; <span style="color:#22c55e">■</span> Autonomous &nbsp;<span style="color:#3b82f6">■</span> Teleop</div>
@@ -1177,9 +1178,10 @@ function fmt(v, dec=2, unit='') {
 const _charts = [];
 const _timelineRenders = [];
 let _currentZoom = null;
-let _timelineDragState = null; // { wrap, sel, entry, startT }
+let _timelineDragState = null; // { wrap, sel, entry, startT, startX }
 let _disabledIntervals = []; // computed per log, used by renderTimeline overlays
 let _enabledIntervals  = []; // [start, end, isAuto] — green for auto, blue for teleop
+let _pinnedT           = null; // persistent time marker synced across charts + timelines
 
 const ZOOM_OPTS = {
   zoom: { drag: { enabled: true }, pinch: { enabled: true }, mode: 'x',
@@ -1192,14 +1194,124 @@ const ZOOM_OPTS_XY = {
   pan:  { enabled: true, mode: 'xy', modifierKey: 'ctrl' },
 };
 
+function _repositionAxisTicks(entry) {
+  requestAnimationFrame(() => {
+    const track = entry.tracks[0];
+    if (!track || !entry.axisTicks) return;
+    const left = track.offsetLeft;
+    const width = track.offsetWidth;
+    if (width === 0) return;
+    entry.axisTicks.forEach((tk, i) => {
+      tk.style.left = (left + (i / (entry.axisTicks.length - 1)) * width) + 'px';
+    });
+  });
+}
+
+function setPinnedT(t) {
+  _pinnedT = (_pinnedT !== null && Math.abs(_pinnedT - t) < 0.05) ? null : t;
+  for (const chart of _charts) {
+    if (chart.config.type !== 'line') continue;
+    chart.update('none');
+  }
+  for (const entry of _timelineRenders) _updateTimelinePin(entry);
+  _updateZoomBarPin();
+}
+
+function _updateZoomBarPin() {
+  const el = document.getElementById('zoom-pin');
+  if (!el) return;
+  if (_pinnedT === null || !_zoomBarData) { el.style.display = 'none'; return; }
+  const { minT, maxT } = _zoomBarData;
+  const pct = (_pinnedT - minT) / (maxT - minT);
+  if (pct < 0 || pct > 1) { el.style.display = 'none'; return; }
+  el.style.left = (pct * 100) + '%';
+  el.style.display = 'block';
+}
+
+function _fmtSegVal(v) {
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : (Math.abs(v) >= 10 ? v.toFixed(2) : v.toFixed(3));
+  return String(v);
+}
+
+function _updateTimelinePin(entry) {
+  if (!entry.pinLine) {
+    const line = document.createElement('div');
+    line.style.cssText = 'position:absolute;top:0;bottom:20px;width:2px;background:repeating-linear-gradient(to bottom,#f59e0b 0px,#f59e0b 4px,transparent 4px,transparent 8px);pointer-events:none;display:none;z-index:6;transform:translateX(-50%)';
+    entry.wrap.appendChild(line);
+    const label = document.createElement('div');
+    label.style.cssText = 'position:absolute;bottom:22px;transform:translateX(-50%);background:rgba(15,23,42,.85);color:#f59e0b;font-size:10px;padding:1px 4px;border-radius:3px;pointer-events:none;display:none;z-index:7;white-space:nowrap';
+    entry.wrap.appendChild(label);
+    const valueBox = document.createElement('div');
+    valueBox.style.cssText = 'position:absolute;top:4px;background:rgba(15,23,42,0.9);border:1px solid rgba(245,158,11,0.5);font-size:10px;padding:3px 6px;border-radius:3px;pointer-events:none;display:none;z-index:7;white-space:nowrap;line-height:16px';
+    entry.wrap.appendChild(valueBox);
+    entry.pinLine = line;
+    entry.pinLabel = label;
+    entry.pinValueBox = valueBox;
+  }
+  if (_pinnedT === null) {
+    entry.pinLine.style.display = 'none';
+    entry.pinLabel.style.display = 'none';
+    entry.pinValueBox.style.display = 'none';
+    return;
+  }
+  const vis = _currentZoom ?? { min: entry.origMinT, max: entry.origMaxT };
+  const pct = (_pinnedT - vis.min) / (vis.max - vis.min);
+  if (pct < 0 || pct > 1) {
+    entry.pinLine.style.display = 'none';
+    entry.pinLabel.style.display = 'none';
+    entry.pinValueBox.style.display = 'none';
+    return;
+  }
+  const track = entry.tracks[0];
+  const tr = track.getBoundingClientRect();
+  const wr = entry.wrap.getBoundingClientRect();
+  const left = (tr.left - wr.left) + pct * tr.width;
+  entry.pinLine.style.left = left + 'px';
+  entry.pinLine.style.display = 'block';
+  entry.pinLabel.style.left = left + 'px';
+  entry.pinLabel.textContent = _pinnedT.toFixed(2) + 's';
+  entry.pinLabel.style.display = 'block';
+
+  // Find which segment is active at _pinnedT for each row
+  const rowVals = [];
+  for (const row of entry.rows) {
+    const lastSeg = row.segments[row.segments.length - 1];
+    const seg = row.segments.find(s => _pinnedT >= s.start && _pinnedT < s.end)
+             ?? (lastSeg && _pinnedT >= lastSeg.start ? lastSeg : null);
+    if (seg) rowVals.push({ name: row.name, val: seg.val });
+  }
+
+  if (rowVals.length > 0) {
+    const multiRow = rowVals.length > 1;
+    entry.pinValueBox.innerHTML = rowVals.map(r =>
+      multiRow
+        ? `<div><span style="color:#94a3b8">${r.name}:</span> <span style="color:#f1f5f9;font-weight:600">${_fmtSegVal(r.val)}</span></div>`
+        : `<span style="color:#f1f5f9;font-weight:600">${_fmtSegVal(r.val)}</span>`
+    ).join('');
+    entry.pinValueBox.style.display = 'block';
+    const boxW = entry.pinValueBox.offsetWidth || 120;
+    const trackLeftPx  = tr.left - wr.left;
+    const trackRightPx = trackLeftPx + tr.width;
+    // Prefer right of pin; fall back to left; clamp to track bounds either way
+    let tipX = (left + 8 + boxW <= trackRightPx) ? left + 8 : left - 8 - boxW;
+    tipX = Math.max(trackLeftPx, Math.min(tipX, trackRightPx - boxW));
+    entry.pinValueBox.style.left = tipX + 'px';
+  } else {
+    entry.pinValueBox.style.display = 'none';
+  }
+}
+
 function _rerenderTimeline(entry, visMin, visMax) {
   const span = (visMax - visMin) || 1;
   entry.tracks.forEach((track, ri) => {
     track.innerHTML = '';
     const row = entry.rows[ri];
-    for (const seg of row.segments) {
+    for (let si = 0; si < row.segments.length; si++) {
+      const seg = row.segments[si];
+      const segEnd = si === row.segments.length - 1 ? Math.max(seg.end, visMax) : seg.end;
       const left = ((seg.start - visMin) / span) * 100;
-      const width = Math.max(0.05, ((seg.end - seg.start) / span) * 100);
+      const width = Math.max(0.05, ((segEnd - seg.start) / span) * 100);
       const s = document.createElement('div'); s.className = 'timeline-seg';
       s.style.left = left + '%'; s.style.width = width + '%';
       s.style.backgroundColor = row.colorFn ? row.colorFn(seg.val) : '#3b82f6';
@@ -1215,11 +1327,13 @@ function _rerenderTimeline(entry, visMin, visMax) {
       track.appendChild(ov);
     }
   });
-  entry.axis.innerHTML = '';
-  for (let i = 0; i <= 10; i++) {
-    const t = visMin + (i / 10) * span;
-    const tk = document.createElement('span'); tk.textContent = t.toFixed(0) + 's'; entry.axis.appendChild(tk);
+  if (entry.axisTicks) {
+    entry.axisTicks.forEach((tk, i) => {
+      tk.textContent = (visMin + (i / (entry.axisTicks.length - 1)) * span).toFixed(0) + 's';
+    });
+    _repositionAxisTicks(entry);
   }
+  _updateTimelinePin(entry);
 }
 
 let _zoomBarData = null;
@@ -1279,13 +1393,15 @@ function syncZoom(source) {
 
 function resetAllZoom() {
   _currentZoom = null;
+  _pinnedT = null;
   _updateZoomBar(null, null);
+  _updateZoomBarPin();
   for (const chart of _charts) {
     if (chart.config.type !== 'line') continue;
     // Manually clear scale overrides instead of chart.resetZoom() to avoid
     // triggering onZoomComplete which would re-set _currentZoom.
-    chart.scales.x.options.min = undefined;
-    chart.scales.x.options.max = undefined;
+    chart.scales.x.options.min = _zoomBarData?.minT;
+    chart.scales.x.options.max = _zoomBarData?.maxT;
     chart.update('none');
   }
   for (const entry of _timelineRenders) {
@@ -1306,6 +1422,7 @@ document.addEventListener('mouseup', e => {
   _timelineDragState = null;
   const track = s.wrap.querySelector('.timeline-track');
   if (!track) return;
+  if (Math.abs(e.clientX - s.startX) < 5) { setPinnedT(s.startT); return; }
   const vis = _currentZoom ?? { min: s.entry.origMinT, max: s.entry.origMaxT };
   const frac = Math.max(0, Math.min(1, (e.clientX - track.getBoundingClientRect().left) / track.getBoundingClientRect().width));
   const endT = vis.min + frac * (vis.max - vis.min);
@@ -1463,19 +1580,123 @@ Chart.register({
   },
   afterDraw(chart) {
     if (chart.config.type !== 'line') return;
+    const { ctx, chartArea, scales } = chart;
+    if (!chartArea || !scales.x) return;
+    const { top, bottom, left, right } = chartArea;
+
+    // Hover crosshair
     const x = chart._crossX;
-    if (x == null || !chart.chartArea) return;
-    const { ctx, chartArea: { top, bottom, left, right } } = chart;
-    if (x < left || x > right) return;
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(x, top);
-    ctx.lineTo(x, bottom);
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = 'rgba(148,163,184,0.55)';
-    ctx.setLineDash([4, 4]);
-    ctx.stroke();
-    ctx.restore();
+    if (x != null && x >= left && x <= right) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x, top); ctx.lineTo(x, bottom);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(148,163,184,0.55)';
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Persistent pin
+    if (_pinnedT != null) {
+      const px = scales.x.getPixelForValue(_pinnedT);
+      if (px >= left && px <= right) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(px, top); ctx.lineTo(px, bottom);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#f59e0b';
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Use Chart.js's own element-at-point lookup to match tooltip values exactly
+        const rows = [];
+        const midY = (top + bottom) / 2;
+        const elements = chart.getElementsAtEventForMode(
+          { offsetX: px, offsetY: midY },
+          'index',
+          { intersect: false },
+          true
+        );
+        if (elements.length > 0) {
+          for (const el of elements) {
+            const ds = chart.data.datasets[el.datasetIndex];
+            const meta = chart.getDatasetMeta(el.datasetIndex);
+            if (meta.hidden) continue;
+            const parsed = meta._parsed?.[el.index];
+            const val = parsed?.y ?? ds.data[el.index]?.y;
+            if (val == null || !isFinite(val)) continue;
+            const fmt = Math.abs(val) >= 100 ? val.toFixed(1) : Math.abs(val) >= 10 ? val.toFixed(2) : val.toFixed(3);
+            rows.push({ label: ds.label || '', value: fmt, color: ds.borderColor || '#94a3b8' });
+          }
+        } else {
+          // Fallback: nearest point per dataset
+          for (let dsi = 0; dsi < chart.data.datasets.length; dsi++) {
+            const ds = chart.data.datasets[dsi];
+            const meta = chart.getDatasetMeta(dsi);
+            if (meta.hidden) continue;
+            const parsed = meta._parsed;
+            if (!parsed || parsed.length === 0) continue;
+            let bestIdx = -1, bestDist = Infinity;
+            for (let i = 0; i < parsed.length; i++) {
+              const d = Math.abs(parsed[i].x - _pinnedT);
+              if (d < bestDist) { bestDist = d; bestIdx = i; }
+            }
+            if (bestIdx < 0 || !isFinite(parsed[bestIdx].y)) continue;
+            const val = parsed[bestIdx].y;
+            const fmt = Math.abs(val) >= 100 ? val.toFixed(1) : Math.abs(val) >= 10 ? val.toFixed(2) : val.toFixed(3);
+            rows.push({ label: ds.label || '', value: fmt, color: ds.borderColor || '#94a3b8' });
+          }
+        }
+
+        // Draw time label at top of pin
+        const timeLabel = _pinnedT.toFixed(2) + 's';
+        ctx.font = 'bold 9px sans-serif';
+        const tlw = ctx.measureText(timeLabel).width + 8;
+        ctx.fillStyle = 'rgba(15,23,42,0.9)';
+        ctx.fillRect(px - tlw / 2, top, tlw, 13);
+        ctx.fillStyle = '#f59e0b';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(timeLabel, px, top + 6.5);
+
+        // Draw value tooltip box if there are rows
+        if (rows.length > 0) {
+          const ROW_H = 14, PAD = 5, LINE_GAP = 2;
+          ctx.font = '9px sans-serif';
+          let maxLabelW = 0, maxValW = 0;
+          for (const r of rows) {
+            maxLabelW = Math.max(maxLabelW, ctx.measureText(r.label).width);
+            maxValW   = Math.max(maxValW,   ctx.measureText(r.value).width);
+          }
+          const boxW = PAD + maxLabelW + 8 + maxValW + PAD;
+          const boxH = PAD + rows.length * ROW_H + (rows.length - 1) * LINE_GAP + PAD;
+          const tipY = top + 16;
+          let tipX = px + 6;
+          if (tipX + boxW > right) tipX = px - 6 - boxW;
+          ctx.fillStyle = 'rgba(15,23,42,0.9)';
+          ctx.strokeStyle = 'rgba(245,158,11,0.5)';
+          ctx.lineWidth = 0.5;
+          ctx.beginPath();
+          ctx.rect(tipX, tipY, boxW, boxH);
+          ctx.fill();
+          ctx.stroke();
+          for (let i = 0; i < rows.length; i++) {
+            const ry = tipY + PAD + i * (ROW_H + LINE_GAP) + ROW_H / 2;
+            ctx.fillStyle = rows[i].color;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(rows[i].label, tipX + PAD, ry);
+            ctx.fillStyle = '#e2e8f0';
+            ctx.textAlign = 'right';
+            ctx.fillText(rows[i].value, tipX + boxW - PAD, ry);
+          }
+        }
+
+        ctx.restore();
+      }
+    }
   }
 });
 
@@ -1523,12 +1744,22 @@ function makeLineChart(container, datasets, yLabel = '', annotations = {}, heigh
   wrap.appendChild(canvas);
   container.appendChild(wrap);
 
+  let _mouseDownX = 0;
+  canvas.addEventListener('mousedown', e => { _mouseDownX = e.clientX; });
+
   const chart = new Chart(canvas, {
     type: 'line',
     data: { datasets },
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
+      onClick(evt) {
+        if (Math.abs((evt.native?.clientX ?? 0) - _mouseDownX) > 5) return;
+        const x = chart._crossX;
+        if (x == null) return;
+        const t = chart.scales.x?.getValueForPixel(x);
+        if (t != null) setPinnedT(t);
+      },
       plugins: {
         legend: { display: datasets.length > 1, labels: { font: { size: 11 }, color: '#a89090' } },
         zoom: ZOOM_OPTS,
@@ -1548,7 +1779,8 @@ function makeLineChart(container, datasets, yLabel = '', annotations = {}, heigh
         },
       },
       scales: {
-        x: { type: 'linear', title: { display: true, text: 'Time (s)', color: '#64748b', font: { size: 11 } },
+        x: { type: 'linear', min: _zoomBarData?.minT, max: _zoomBarData?.maxT,
+             title: { display: true, text: 'Time (s)', color: '#64748b', font: { size: 11 } },
              ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(148,163,184,0.12)' } },
         y: { title: { display: !!yLabel, text: yLabel, color: '#64748b', font: { size: 11 } },
              ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(148,163,184,0.12)' } },
@@ -1650,13 +1882,19 @@ function renderTimeline(parent, rows, minT, maxT) {
     }
     el.appendChild(track); wrap.appendChild(el);
   }
-  // x-axis
-  const axis = document.createElement('div'); axis.className = 'timeline-axis';
+  // x-axis — ticks positioned absolutely so they align with the track column exactly
+  const axisWrap = document.createElement('div');
+  axisWrap.style.cssText = 'position:relative;height:16px;margin-top:2px';
+  const axisTicks = [];
   for (let i = 0; i <= 10; i++) {
-    const t = minT + (i / 10) * span;
-    const tk = document.createElement('span'); tk.textContent = t.toFixed(0) + 's'; axis.appendChild(tk);
+    const tk = document.createElement('span');
+    tk.style.cssText = 'position:absolute;font-size:10px;color:var(--muted);transform:translateX(-50%);white-space:nowrap';
+    tk.textContent = (minT + (i / 10) * span).toFixed(0) + 's';
+    axisWrap.appendChild(tk);
+    axisTicks.push(tk);
   }
-  wrap.appendChild(axis);
+  const axis = axisWrap; // kept as `axis` for _rerenderTimeline reference
+  wrap.appendChild(axisWrap);
 
   // Drag-to-zoom selection overlay
   const sel = document.createElement('div');
@@ -1664,9 +1902,11 @@ function renderTimeline(parent, rows, minT, maxT) {
   wrap.appendChild(sel);
 
   parent.appendChild(wrap);
-  const entry = { tracks: trackEls, axis, rows, origMinT: minT, origMaxT: maxT };
+  const entry = { tracks: trackEls, axis, axisTicks, rows, origMinT: minT, origMaxT: maxT, wrap };
   _timelineRenders.push(entry);
   if (_currentZoom) _rerenderTimeline(entry, _currentZoom.min, _currentZoom.max);
+  _repositionAxisTicks(entry);
+  _updateTimelinePin(entry);
 
   wrap.addEventListener('mousedown', e => {
     if (e.button !== 0) return;
@@ -1676,7 +1916,7 @@ function renderTimeline(parent, rows, minT, maxT) {
     const vis = _currentZoom ?? { min: entry.origMinT, max: entry.origMaxT };
     const tr = track.getBoundingClientRect();
     const frac = Math.max(0, Math.min(1, (e.clientX - tr.left) / tr.width));
-    _timelineDragState = { wrap, sel, entry, startT: vis.min + frac * (vis.max - vis.min) };
+    _timelineDragState = { wrap, sel, entry, startT: vis.min + frac * (vis.max - vis.min), startX: e.clientX };
     _updateTimelineSel(_timelineDragState, e.clientX);
   });
 }
@@ -4065,6 +4305,8 @@ function initTabs(P, fileName) {
   _currentZoom = null;
   _timelineDragState = null;
   _zoomBarData = null;
+  _pinnedT = null;
+  _updateZoomBarPin();
   initZoomBar(minT, maxT);
 
   const tabData = tabDefs.map((def, i) => {
@@ -4104,6 +4346,12 @@ function initTabs(P, fileName) {
         td.render(td.panel, P, minT, maxT, fileName);
         td.done = true;
       }
+      requestAnimationFrame(() => {
+        _timelineRenders.forEach(entry => {
+          _repositionAxisTicks(entry);
+          _updateTimelinePin(entry);
+        });
+      });
     });
   });
 }
