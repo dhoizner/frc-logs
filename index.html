@@ -71,7 +71,7 @@ main{padding:0}
 .kpi .unit{font-size:11px;color:var(--muted);margin-left:3px}
 .timeline{margin-bottom:20px}
 .timeline-row{display:flex;align-items:center;gap:8px;margin-bottom:4px}
-.timeline-label{min-width:160px;font-size:11px;color:var(--muted);text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.timeline-label{width:160px;min-width:160px;max-width:160px;font-size:11px;color:var(--muted);text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .timeline-track{flex:1;height:20px;background:var(--surface2);border-radius:3px;position:relative;overflow:hidden}
 .timeline-seg{position:absolute;height:100%;border-radius:2px;transition:.05s}
 .timeline-seg:hover{opacity:.85}
@@ -907,13 +907,14 @@ const FIELD = {
 const SETTINGS = {
   shooter: { tol: 50, tolLow: 80, sotmTol: 100, fotmTol: 150, fotmTolLow: 250,
              rpmKb: 2675, rpmCorner: 3650 },
-  hood:    { tolDeg: 0.5, sotmTolDeg: 2, stowDeg: 21, kbDeg: 20, cornerDeg: 39, ferryDeg: 44 },
+  hood:    { tolDeg: 0.5, sotmTolDeg: 2, stowDeg: 21, kbDeg: 20, cornerDeg: 39, ferryDeg: 44.75 },
   turret:  { tolDeg: 2, fotmTolDeg: 10, sotmClose: 10, sotmFar: 6,
              kbDeg: 0, leftCornerDeg: -233, rightCornerDeg: 53, maxDeg: 210, minDeg: -210 },
   swerve:  { maxVel: 4.16, maxVelSotm: 1.75, brownout: 5.5 },
+  intake:  { digestDeg: 30 },
   interpAngle: [[0.96,15],[1.22,20],[2.15,27],[3.38,34],[4.43,39],[5.66,39],[6.44,44]],
-  interpRpm:   [[0.96,2800],[1.22,2600],[2.15,2805],[3.38,3075],[4.43,3350],[5.66,3650],[6.44,3800]],
-  ferryRpm:    [[1,2000],[5.16,3300],[6.94,3400],[9.77,3600]],
+  interpRpm:   [[0.96,2800],[1.22,2600],[2.15,2805],[3.38,3075],[4.43,3350],[5.66,3650],[6.44,3800],[8.23,4500]],
+  ferryRpm:    [[1,2000],[5.16,3300],[6.94,3600],[7.87,3800],[9.77,4300],[10.694,4700],[11.516,4900]],
 };
 
 // ================================================================
@@ -954,11 +955,16 @@ const COLORS = {
   rollerState: { INTAKE:'#22c55e', OUTTAKE:'#ef4444', STOP:'#374151' },
   handoff:  { STOP:'#374151', FORWARD:'#22c55e', REVERSE:'#ef4444' },
   spindexer:{ STOP:'#374151', FORWARD:'#22c55e', REVERSE:'#ef4444' },
+  // Mirrors Settings.LED's RGBWColor per LedState (LEDController.LedState) so the legend
+  // roughly matches what the physical LED strip actually shows.
   leds:{
-    NONE:'#374151', DISABLED_ALLOWED:'#6b7280', DISABLED_DISALLOWED:'#ef4444',
-    UNDER_TRENCH:'#fcd34d', TURRET_WRAPPING:'#f97316', LEFT_CORNER:'#10b981',
-    RIGHT_CORNER:'#14b8a6', KITBOT:'#a78bfa', SOTM:'#f97316', FOTM:'#ec4899',
-    REVERSE:'#ef4444', INTAKE_STOW:'#6b7280', INTAKE_DEPLOYED:'#22c55e',
+    PASSING_TRENCH:'#ef4444', IS_BEHIND_HUB:'#ef4444', TURRET_WRAPPING:'#ef4444',
+    SHOOT_IN_PLACE:'#8b5cf6', SOTM_ON:'#22c55e', FOTM_ON:'#1e3a8a',
+    LEFT_CORNER:'#8b5cf6', RIGHT_CORNER:'#3b82f6', KB_DISTANCE:'#f472b6',
+    STOP_ROLLERS:'#eab308', RESET:'#eab308', X_WHEELS:'#ef4444',
+    INTAKE_STOW:'#92400e', INTAKE_DEPLOYED:'#8b5cf6',
+    DISABLED_ALIGNED:'#22c55e', DISABLED:'#ef4444',
+    AUTON_COLOR_ONE:'#3b82f6', AUTON_COLOR_TWO:'#f97316',
   },
 };
 function sc(map, val){ return map[val] ?? '#a89090'; }
@@ -2023,9 +2029,10 @@ function renderOverview(panel, P, minT, maxT, fileName) {
   const energyWh   = getEnergyWh(P);
   const totalCurr  = P.get('EnergyUtil/Total current Current');
   const turretAtTolS  = P.get('Superstructure/Turret At Tolerance?');
-  const velX       = P.get('Swerve/Velocity Field Relative X (m per s)');
-  const velY       = P.get('Swerve/Velocity Field Relative Y (m per s)');
+  const velX       = P.get('Swerve/Velocity Field Relative X');
+  const velY       = P.get('Swerve/Velocity Field Relative Y');
   const poseSamples= P.get('Swerve/Pose');
+  const autonS     = P.get('Auton/Selected');
 
   // Derived: peak velocity magnitude
   let peakVel = null;
@@ -2163,7 +2170,7 @@ function renderOverview(panel, P, minT, maxT, fileName) {
     stateS, readyS, shouldStopS, shooterAtTolS, hoodAtTolS, turretAtTolS,
     battV, energyWh, totalCurr: P.get('EnergyUtil/Total current Current'),
     robotTotalCurr: P.get('Robot/Total Current Draw'),
-    velX, velY, poseSamples,
+    velX, velY, poseSamples, autonS,
     enabledS: P.get('DS:enabled'),
     sotmTimerS: P.get('Superstructure/SOTM Stopped Timer'),
     fotmTimerS: P.get('Superstructure/FOTM Stopped Timer'),
@@ -2276,6 +2283,7 @@ function renderOverview(panel, P, minT, maxT, fileName) {
       { label: 'Peak Total Current',        value: fmt(peakVal(robotTotalCurr), 0), unit: 'A' },
       { label: 'Peak Swerve Speed',         value: fmt(peakVel2, 2), unit: 'm/s' },
       { label: 'Loop Overruns',             value: String(overrunCount2), unit: '', valueColor: overrunCount2 < 5 ? 'var(--green)' : 'var(--red)' },
+      { label: 'Auton Selected',            value: lastVal(_overviewRaw.autonS) ?? 'N/A', unit: '' },
       { label: 'Duration',                  value: fmt(hi - lo, 1), unit: 's' },
       { label: 'Time Enabled',              value: fmt(timeEnabled2, 1), unit: 's' },
       ...[['SOTM Ready %','SOTM'],['FOTM Ready %','FOTM']].map(([lbl,st]) => { const v=pctNotStopped2(st); return { label:lbl, value:fmt(v,1), unit:'%', valueColor:readyColor2(v) }; }),
@@ -2341,6 +2349,7 @@ function renderOverview(panel, P, minT, maxT, fileName) {
       { name: 'Turret Lagging SOTM',   samples: clipToState(P.get('Spindexer/Should Stop/Turret Lagging SOTM'), 'SOTM'), color: '#f97316' },
       { name: 'Is Turret Wrapping?',   samples: clipToState(P.get('Spindexer/Should Stop/Is Turret Wrapping?'),  'SOTM'), color: '#f97316' },
       { name: 'Is Under Trench?',      samples: clipToState(P.get('Spindexer/Should Stop/Is Under Trench?'),     'SOTM'), color: '#f97316' },
+      { name: 'Is Behind Tower?',      samples: clipToState(P.get('Spindexer/Should Stop/Is Behind Tower?'),     'SOTM'), color: '#f97316' },
       { name: 'Is Hopper Empty?',      samples: clipToState(P.get('Superstructure/Is Hopper Empty?'), 'SOTM'), color: '#f59e0b' },
     ];
     const allRows = rows.filter(r => r.samples.length).map(r => ({
@@ -2354,9 +2363,11 @@ function renderOverview(panel, P, minT, maxT, fileName) {
     const rows = [
       { name: 'Should Stop?',                  samples: clipToState(shouldStopS, 'FOTM'), color: '#ef4444' },
       { name: 'Is Behind Hub While Ferrying?', samples: clipToState(P.get('Spindexer/Should Stop/Is Behind Hub While Ferrying?'), 'FOTM'), color: '#f97316' },
+      { name: 'Is behind Opponent\'s Hub While Ferrying?', samples: clipToState(P.get('Spindexer/Should Stop/Is behind Opponent\'s Hub While Ferrying?'), 'FOTM'), color: '#f97316' },
       { name: 'Is Outside Alliance Zone?',     samples: clipToState(P.get('Spindexer/Should Stop/Is Outside Alliance Zone?'),     'FOTM'), color: '#f97316' },
       { name: 'Is Under Trench?',              samples: clipToState(P.get('Spindexer/Should Stop/Is Under Trench?'),              'FOTM'), color: '#f97316' },
       { name: 'Is Turret Wrapping?',           samples: clipToState(P.get('Spindexer/Should Stop/Is Turret Wrapping?'),           'FOTM'), color: '#f97316' },
+      { name: 'Turret Lagging FOTM',           samples: clipToState(P.get('Spindexer/Should Stop/Turret Lagging FOTM'),           'FOTM'), color: '#f97316' },
     ];
     const allRows = rows.filter(r => r.samples.length).map(r => ({
       name: r.name, segments: toSegments(r.samples), colorFn: v => v ? r.color : '#374151',
@@ -2391,13 +2402,13 @@ function renderSuperstructure(panel, P, minT, maxT) {
     const state   = P.get('Superstructure/Hood/State');
     const target  = P.get('Superstructure/Hood/Target Angle (deg)');
     const current = P.get('Superstructure/Hood/Current Angle (deg)');
-    const clErr   = P.get('Superstructure/Hood/Closed Loop Error (deg)');
-    const voltage = P.get('Superstructure/Hood/Applied Voltage (amps)');
+    const clErr   = P.get('Superstructure/Hood/Closed Loop Error');
+    const voltage = P.get('Superstructure/Hood/Applied Voltage');
     const stall   = P.get('Superstructure/Hood/is stalling');
     const homedUp = P.get('Superstructure/Hood/SUCCESFULLY HOMED UPPER');
     const homedLo = P.get('Superstructure/Hood/SUCCESFULLY HOMED LOWER');
-    const supply  = P.get('Superstructure/Hood/Supply Current (amps)');
-    const stator  = P.get('Superstructure/Hood/Stator Current (amps)');
+    const supply  = P.get('Superstructure/Hood/Supply Current');
+    const stator  = P.get('Superstructure/Hood/Stator Current');
 
     motorKpis(d, [{ label: 'Hood Supply', curr: supply }, { label: 'Hood Stator', curr: stator }]);
 
@@ -2435,7 +2446,7 @@ function renderSuperstructure(panel, P, minT, maxT) {
         const ds = [];
         if (supply.length)  ds.push(lineDataset('Supply Current (A)',  toXY(supply),  '#3b82f6'));
         if (stator.length)  ds.push(lineDataset('Stator Current (A)',  toXY(stator),  '#06b6d4'));
-        if (voltage.length) ds.push(lineDataset('Voltage (V) [key mislabeled as amps]', toXY(voltage), '#f97316'));
+        if (voltage.length) ds.push(lineDataset('Voltage (V)', toXY(voltage), '#f97316'));
         makeLineChart(s, ds, '');
       });
     }
@@ -2446,15 +2457,15 @@ function renderSuperstructure(panel, P, minT, maxT) {
     const targetRpm  = P.get('Superstructure/Shooter/Target RPM');
     const leaderRpm  = P.get('Superstructure/Shooter/Leader RPM');
     const follRpm    = P.get('Superstructure/Shooter/Follower RPM');
-    const implErr    = P.get('Superstructure/Shooter/Implemented Error (RPM)');
-    const lSupply    = P.get('Superstructure/Shooter/Leader Supply Current (amps)');
-    const lStator    = P.get('Superstructure/Shooter/Leader Stator Current (amps)');
-    const fSupply    = P.get('Superstructure/Shooter/Follower Supply Current (amps)');
-    const fStator    = P.get('Superstructure/Shooter/Follower Stator Current (amps)');
-    const lVolt      = P.get('Superstructure/Shooter/Leader Voltage (volts)');
-    const fVolt      = P.get('Superstructure/Shooter/Follower Voltage (volts)');
-    const lTemp      = P.get('Superstructure/Shooter/Leader Motor Temp (C)');
-    const fTemp      = P.get('Superstructure/Shooter/Follower Motor Temp (C)');
+    const implErr    = P.get('Superstructure/Shooter/Implemented Error');
+    const lSupply    = P.get('Superstructure/Shooter/Leader Supply Current');
+    const lStator    = P.get('Superstructure/Shooter/Leader Stator Current');
+    const fSupply    = P.get('Superstructure/Shooter/Follower Supply Current');
+    const fStator    = P.get('Superstructure/Shooter/Follower Stator Current');
+    const lVolt      = P.get('Superstructure/Shooter/Leader Voltage');
+    const fVolt      = P.get('Superstructure/Shooter/Follower Voltage');
+    const lTemp      = P.get('Superstructure/Shooter/Leader Motor Temp');
+    const fTemp      = P.get('Superstructure/Shooter/Follower Motor Temp');
 
     motorKpis(d, [
       { label: 'Leader Supply',   curr: lSupply },
@@ -2529,14 +2540,15 @@ function renderSuperstructure(panel, P, minT, maxT) {
     const state   = P.get('Superstructure/Turret/State');
     const target  = P.get('Superstructure/Turret/Target Angle');
     const current = P.get('Superstructure/Turret/Current Angle');
-    const wrapped = P.get('Superstructure/Turret/Wrapped Target Angle (deg)');
-    const clErr   = P.get('Superstructure/Turret/Closed Loop Error (deg)');
+    const wrapped = P.get('Superstructure/Turret/Wrapped Target Angle');
+    const clErr   = P.get('Superstructure/Turret/Closed Loop Error');
     const dist    = P.get('Superstructure/Turret/Dist From Hub');
-    const enc18   = P.get('Superstructure/Turret/Encoder18t Abs Position (Rot)');
-    const enc17   = P.get('Superstructure/Turret/Encoder17t Abs Position (Rot)');
-    const voltage = P.get('Superstructure/Turret/Voltage (volts)');
-    const supCurr = P.get('Superstructure/Turret/Supply Current (amps)');
-    const staCurr = P.get('Superstructure/Turret/Stator Current (amps)');
+    const distVirt= P.get('Superstructure/SOTM/turret dist to virtual pose');
+    const enc18   = P.get('Superstructure/Turret/Encoder18t Abs Position');
+    const enc17   = P.get('Superstructure/Turret/Encoder17t Abs Position');
+    const voltage = P.get('Superstructure/Turret/Voltage');
+    const supCurr = P.get('Superstructure/Turret/Supply Current');
+    const staCurr = P.get('Superstructure/Turret/Stator Current');
 
     motorKpis(d, [{ label: 'Turret Supply', curr: supCurr }, { label: 'Turret Stator', curr: staCurr }]);
 
@@ -2575,9 +2587,12 @@ function renderSuperstructure(panel, P, minT, maxT) {
       });
     }
 
-    if (dist.length) {
+    if (dist.length || distVirt.length) {
       section(d, 'Distance From Hub', s => {
-        makeLineChart(s, [lineDataset('Dist (m)', toXY(dist), '#3b82f6')], 'Meters',
+        const ds = [];
+        if (dist.length)     ds.push(lineDataset('Dist (m)', toXY(dist), '#3b82f6'));
+        if (distVirt.length) ds.push(lineDataset('Dist to Virtual Pose (m) [SOTM]', toXY(distVirt), '#8b5cf6', { borderDash:[4,3] }));
+        makeLineChart(s, ds, 'Meters',
           { sotmThresh: hLine(1.75, 'SOTM threshold', '#f97316') });
       });
     }
@@ -2619,9 +2634,9 @@ function renderSuperstructure(panel, P, minT, maxT) {
 
   function renderSuperOverview(d) {
     const stateS  = P.get('Superstructure/State');
-    const hoodErr = P.get('Superstructure/Hood/Closed Loop Error (deg)');
-    const shotErr = P.get('Superstructure/Shooter/Implemented Error (RPM)');
-    const turrErr = P.get('Superstructure/Turret/Closed Loop Error (deg)');
+    const hoodErr = P.get('Superstructure/Hood/Closed Loop Error');
+    const shotErr = P.get('Superstructure/Shooter/Implemented Error');
+    const turrErr = P.get('Superstructure/Turret/Closed Loop Error');
     const readyS  = P.get('Superstructure/Is Ready To Shoot?');
 
     if (stateS.length) {
@@ -2828,6 +2843,54 @@ function renderSuperstructure(panel, P, minT, maxT) {
     { label: 'Turret',         render: renderTurret },
     { label: 'Interpolation',  render: renderInterp },
   ]);
+}
+
+// ================================================================
+// TAB: LEDS
+// ================================================================
+function renderLEDs(panel, P, minT, maxT) {
+  const state       = P.get('LED/State');
+  const cachedState = P.get('LED/Cached State');
+  const pattern     = P.get('LED/Applied Pattern Name');
+  const backDead    = P.get('LED/Is Back LL dead');
+  const leftDead    = P.get('LED/Is Left LL dead');
+  const rightDead   = P.get('LED/Is Right LL dead');
+
+  if (!state.length && !cachedState.length) {
+    section(panel, 'LEDs', d => noData(d));
+    return;
+  }
+
+  section(panel, 'LED State', d => {
+    stateLegend(d, state.length ? state : cachedState, COLORS.leds);
+    const rows = [
+      state.length       && { name: 'State',        segments: toSegments(state),       colorFn: v => sc(COLORS.leds, v) },
+      cachedState.length && { name: 'Cached State',  segments: toSegments(cachedState), colorFn: v => sc(COLORS.leds, v) },
+    ].filter(Boolean);
+    renderTimeline(d, rows, minT, maxT);
+  });
+
+  if (pattern.length) {
+    section(panel, 'Applied Pattern', d => {
+      const PALETTE = ['#3b82f6','#22c55e','#f97316','#ec4899','#8b5cf6','#06b6d4','#f59e0b','#14b8a6'];
+      const patternColors = {};
+      let pi = 0;
+      for (const { val } of pattern) if (!(val in patternColors)) patternColors[val] = PALETTE[pi++ % PALETTE.length];
+      stateLegend(d, pattern, patternColors);
+      renderTimeline(d, [{ name: 'Pattern', segments: toSegments(pattern), colorFn: v => sc(patternColors, v) }], minT, maxT);
+    });
+  }
+
+  if (backDead.length || leftDead.length || rightDead.length) {
+    section(panel, 'Dead Limelights', d => {
+      const rows = [
+        backDead.length  && { name: 'Back LL dead',  segments: toSegments(backDead),  colorFn: v => v ? '#ef4444' : '#374151' },
+        leftDead.length  && { name: 'Left LL dead',  segments: toSegments(leftDead),  colorFn: v => v ? '#ef4444' : '#374151' },
+        rightDead.length && { name: 'Right LL dead', segments: toSegments(rightDead), colorFn: v => v ? '#ef4444' : '#374151' },
+      ].filter(Boolean);
+      renderTimeline(d, rows, minT, maxT);
+    });
+  }
 }
 
 // ================================================================
@@ -3254,7 +3317,7 @@ function renderField(panel, P, minT, maxT) {
   renderOobList();
 
   // Distance from Hub
-  const disHub = P.get('Swerve/Distance From Hub (meters)');
+  const disHub = P.get('Swerve/Distance From Hub');
   if (disHub.length) {
     section(panel, 'Distance from Hub', d => {
       makeLineChart(d, [lineDataset('Distance (m)', toXY(disHub), '#f59e0b')], 'm');
@@ -3556,12 +3619,23 @@ function renderPower(panel, P, minT, maxT) {
 // TAB 5: SWERVE
 // ================================================================
 function renderSwerve(panel, P, minT, maxT) {
+  section(panel, 'Auton Path', d => {
+    const pathS = P.get('Swerve/Last Path Followed');
+    if (!pathS.length) return noData(d);
+    const PALETTE = ['#3b82f6','#22c55e','#f97316','#ec4899','#8b5cf6','#06b6d4','#f59e0b','#14b8a6','#a78bfa','#ef4444'];
+    const pathColors = {};
+    let pi = 0;
+    for (const { val } of pathS) if (!(val in pathColors)) pathColors[val] = PALETTE[pi++ % PALETTE.length];
+    stateLegend(d, pathS, pathColors);
+    renderTimeline(d, [{ name: 'Last Path Followed', segments: toSegments(pathS), colorFn: v => sc(pathColors, v) }], minT, maxT);
+  });
+
   section(panel, 'Velocity', d => {
-    const vfx = P.get('Swerve/Velocity Field Relative X (m per s)');
-    const vfy = P.get('Swerve/Velocity Field Relative Y (m per s)');
-    const vrx = P.get('Swerve/Velocity Robot Relative X (m per s)');
-    const vry = P.get('Swerve/Velocity Robot Relative Y (m per s)');
-    const ang = P.get('Swerve/Angular Velocity (rad per s)');
+    const vfx = P.get('Swerve/Velocity Field Relative X');
+    const vfy = P.get('Swerve/Velocity Field Relative Y');
+    const vrx = P.get('Swerve/Velocity Robot Relative X');
+    const vry = P.get('Swerve/Velocity Robot Relative Y');
+    const ang = P.get('Swerve/Angular Velocity');
     const ax  = P.get('Swerve/Robot Accel X');
     const ay  = P.get('Swerve/Robot Accel Y');
     if (!vfx.length && !vfy.length) return noData(d);
@@ -3593,10 +3667,12 @@ function renderSwerve(panel, P, minT, maxT) {
     const MODULE_NAMES = ['FL', 'FR', 'BL', 'BR'];
     for (let i = 0; i < 4; i++) {
       const prefix = `Swerve/Modules/Module ${i}`;
-      const spd    = P.get(`${prefix}/Speed (m per s)`);
-      const tSpd   = P.get(`${prefix}/Target Speed (m per s)`);
-      const ang    = P.get(`${prefix}/Angle (deg)`);
-      const tAng   = P.get(`${prefix}/Target Angle (deg)`);
+      const spd    = P.get(`${prefix}/Speed`);
+      const tSpd   = P.get(`${prefix}/Target Speed`);
+      const ang    = P.get(`${prefix}/Angle`);
+      const tAng   = P.get(`${prefix}/Target Angle`);
+      const stator = P.get(`${prefix}/Stator Current`);
+      const supply = P.get(`${prefix}/Supply Current`);
       if (!spd.length && !ang.length) continue;
 
       const h = document.createElement('h4'); h.textContent = `Module ${i} (${MODULE_NAMES[i]})`; d.appendChild(h);
@@ -3611,6 +3687,12 @@ function renderSwerve(panel, P, minT, maxT) {
         if (tAng.length) ds.push(lineDataset(`Target Angle`, toXY(tAng), '#f97316', { borderDash:[4,3] }));
         if (ang.length)  ds.push(lineDataset(`Angle`,        toXY(ang),  '#22c55e'));
         makeLineChart(d, ds, 'Degrees');
+      }
+      if (stator.length || supply.length) {
+        const ds = [];
+        if (stator.length) ds.push(lineDataset(`Stator (A)`, toXY(stator), '#06b6d4'));
+        if (supply.length) ds.push(lineDataset(`Supply (A)`, toXY(supply), '#f97316'));
+        makeLineChart(d, ds, 'Amps');
       }
     }
   });
@@ -3627,13 +3709,21 @@ function renderIntakeHandling(panel, P, minT, maxT) {
     const rollerState = P.get('Intake/Roller State');
     const curAngle    = P.get('Intake/Current Angle (deg)');
     const tgtAngle    = P.get('Intake/Target Angle (deg)');
-    const pivotVolt   = P.get('Intake/Pivot Voltage (volts)');
-    const pivotSupply = P.get('Intake/Pivot Supply Current (amps)');
+    const pivotVolt   = P.get('Intake/Pivot Voltage');
+    const pivotSupply = P.get('Intake/Pivot Supply Current');
+    const pivotStator = P.get('Intake/Pivot Stator Current');
+    const pivotTorque = P.get('Intake/Pivot Torque Current');
+    const pivotClErr  = P.get('Intake/Pivot Closed Loop Error');
+    const pivotTemp   = P.get('Intake/Pivot Temperature');
+    const leaderTemp  = P.get('Intake/Leader Temperature');
+    const followerTemp= P.get('Intake/Follower Temperature');
     const pushdown    = P.get('Intake/Pivot Pushdown Voltage Applied?');
-    const rollerLVolt = P.get('Intake/Roller Leader Voltage (volts)');
-    const rollerLCurr = P.get('Intake/Roller Leader Current (amps)');
-    const rollerFVolt = P.get('Intake/Roller Follower Voltage (volts)');
-    const rollerFCurr = P.get('Intake/Roller Follower Current (amps)');
+    const rollerLVolt = P.get('Intake/Roller Leader Voltage');
+    const rollerLCurr = P.get('Intake/Roller Leader Current');
+    const rollerLStator = P.get('Intake/Roller Leader Stator Current');
+    const rollerFVolt = P.get('Intake/Roller Follower Voltage');
+    const rollerFCurr = P.get('Intake/Roller Follower Current');
+    const rollerFStator = P.get('Intake/Roller Follower Stator Current');
     const atTol       = P.get('Intake/Pivot At Tolerance?');
 
     if (!pivotState.length && !rollerState.length) return noData(d);
@@ -3663,26 +3753,44 @@ function renderIntakeHandling(panel, P, minT, maxT) {
       makeLineChart(d, ds, 'Degrees', {
         stow:   hLine(71,  'STOW 71°',   '#6b7280'),
         deploy: hLine(-10, 'DEPLOY −10°','#22c55e'),
-        digest: hLine(50,  'DIGEST 50°', '#06b6d4'),
+        digest: hLine(SETTINGS.intake.digestDeg,  `DIGEST ${SETTINGS.intake.digestDeg}°`, '#06b6d4'),
       });
     }
 
-    if (pivotVolt.length || pivotSupply.length) {
+    if (pivotClErr.length) {
+      const h = document.createElement('h4'); h.textContent = 'Pivot Closed-Loop Error'; d.appendChild(h);
+      makeLineChart(d, [lineDataset('Error (°)', toXY(pivotClErr), '#f59e0b')], 'Degrees');
+    }
+
+    if (pivotVolt.length || pivotSupply.length || pivotStator.length || pivotTorque.length) {
       const h = document.createElement('h4'); h.textContent = 'Pivot Motor'; d.appendChild(h);
       const ds = [];
       if (pivotVolt.length)   ds.push(lineDataset('Voltage (V)',      toXY(pivotVolt),   '#3b82f6'));
       if (pivotSupply.length) ds.push(lineDataset('Supply Curr (A)',  toXY(pivotSupply), '#f97316'));
+      if (pivotStator.length) ds.push(lineDataset('Stator Curr (A)',  toXY(pivotStator), '#06b6d4'));
+      if (pivotTorque.length) ds.push(lineDataset('Torque Curr (A)',  toXY(pivotTorque), '#a78bfa'));
       makeLineChart(d, ds, '');
     }
 
-    if (rollerLVolt.length || rollerLCurr.length || rollerFVolt.length || rollerFCurr.length) {
+    if (rollerLVolt.length || rollerLCurr.length || rollerLStator.length || rollerFVolt.length || rollerFCurr.length || rollerFStator.length) {
       const h = document.createElement('h4'); h.textContent = 'Roller Motors'; d.appendChild(h);
       const ds = [];
-      if (rollerLVolt.length) ds.push(lineDataset('Leader Voltage (V)',    toXY(rollerLVolt), '#3b82f6'));
-      if (rollerLCurr.length) ds.push(lineDataset('Leader Current (A)',    toXY(rollerLCurr), '#f97316'));
-      if (rollerFVolt.length) ds.push(lineDataset('Follower Voltage (V)',  toXY(rollerFVolt), '#3b82f6', { borderDash:[4,3] }));
-      if (rollerFCurr.length) ds.push(lineDataset('Follower Current (A)',  toXY(rollerFCurr), '#f97316', { borderDash:[4,3] }));
+      if (rollerLVolt.length)   ds.push(lineDataset('Leader Voltage (V)',      toXY(rollerLVolt),   '#3b82f6'));
+      if (rollerLCurr.length)   ds.push(lineDataset('Leader Current (A)',      toXY(rollerLCurr),   '#f97316'));
+      if (rollerLStator.length) ds.push(lineDataset('Leader Stator (A)',       toXY(rollerLStator), '#06b6d4'));
+      if (rollerFVolt.length)   ds.push(lineDataset('Follower Voltage (V)',    toXY(rollerFVolt),   '#3b82f6', { borderDash:[4,3] }));
+      if (rollerFCurr.length)   ds.push(lineDataset('Follower Current (A)',    toXY(rollerFCurr),   '#f97316', { borderDash:[4,3] }));
+      if (rollerFStator.length) ds.push(lineDataset('Follower Stator (A)',     toXY(rollerFStator), '#06b6d4', { borderDash:[4,3] }));
       makeLineChart(d, ds, '');
+    }
+
+    if (pivotTemp.length || leaderTemp.length || followerTemp.length) {
+      const h = document.createElement('h4'); h.textContent = 'Motor Temperatures (DEBUG)'; d.appendChild(h);
+      const ds = [];
+      if (pivotTemp.length)    ds.push(lineDataset('Pivot Temp (°C)',    toXY(pivotTemp),    '#f97316'));
+      if (leaderTemp.length)   ds.push(lineDataset('Roller Leader Temp (°C)',   toXY(leaderTemp),   '#ec4899'));
+      if (followerTemp.length) ds.push(lineDataset('Roller Follower Temp (°C)', toXY(followerTemp), '#a78bfa'));
+      makeLineChart(d, ds, '°C');
     }
   });
 
@@ -3728,17 +3836,21 @@ function renderIntakeHandling(panel, P, minT, maxT) {
   // Spindexer
   section(panel, 'Spindexer', d => {
     const state   = P.get('Spindexer/State');
-    const rpm     = P.get('Spindexer/Leader Motor RPM');
-    const lVolt   = P.get('Spindexer/Leader Voltage (volts)');
-    const lCurr   = P.get('Spindexer/Leader Supply Current (amps)');
-    const fVolt   = P.get('Spindexer/Follower Voltage (volts)');
-    const fCurr   = P.get('Spindexer/Follower Supply Current (amps)');
+    const rpm     = P.get('Spindexer/Leader RPM');
+    const fRpm    = P.get('Spindexer/Follower RPM');
+    const lVolt   = P.get('Spindexer/Leader Voltage');
+    const lCurr   = P.get('Spindexer/Leader Supply Current');
+    const fVolt   = P.get('Spindexer/Follower Voltage');
+    const fCurr   = P.get('Spindexer/Follower Supply Current');
     const STOP_KEYS = [
       'Spindexer/Should Stop/Is Behind Hub While Ferrying?',
+      'Spindexer/Should Stop/Is behind Opponent\'s Hub While Ferrying?',
+      'Spindexer/Should Stop/Is Behind Tower?',
       'Spindexer/Should Stop/Is Turret Wrapping?',
       'Spindexer/Should Stop/Is Outside Alliance Zone?',
       'Spindexer/Should Stop/Is Under Trench?',
       'Spindexer/Should Stop/Turret Lagging SOTM',
+      'Spindexer/Should Stop/Turret Lagging FOTM',
       'Spindexer/Should Stop/In Manual State',
     ];
 
@@ -3761,9 +3873,12 @@ function renderIntakeHandling(panel, P, minT, maxT) {
       renderTimeline(d, stopRows, minT, maxT);
     }
 
-    if (rpm.length) {
+    if (rpm.length || fRpm.length) {
       const h = document.createElement('h4'); h.textContent = 'RPM'; d.appendChild(h);
-      makeLineChart(d, [lineDataset('Leader RPM', toXY(rpm), '#22c55e')], 'RPM');
+      const ds = [];
+      if (rpm.length)  ds.push(lineDataset('Leader RPM',   toXY(rpm),  '#22c55e'));
+      if (fRpm.length) ds.push(lineDataset('Follower RPM', toXY(fRpm), '#4ade80'));
+      makeLineChart(d, ds, 'RPM');
     }
     if (lVolt.length || lCurr.length || fVolt.length || fCurr.length) {
       const h = document.createElement('h4'); h.textContent = 'Motors'; d.appendChild(h);
@@ -4026,7 +4141,7 @@ function renderVision(panel, P, minT, maxT) {
     const hasData     = P.get('Vision/Has Data');
     const posX        = P.get('Vision/Pose X Component');
     const posY        = P.get('Vision/Pose Y Component');
-    const posTheta    = P.get('Vision/Pose Theta (Degrees)');
+    const posTheta    = P.get('Vision/Pose Theta');
 
     if (megaTagMode.length) {
       renderTimeline(d, [{ name: 'MegaTag Mode', segments: toSegments(megaTagMode, maxT),
@@ -4442,6 +4557,7 @@ function initTabs(P, fileName) {
     { id: 'power',         label: 'Power / Energy',     render: renderPower },
     { id: 'swerve',        label: 'Swerve',             render: renderSwerve },
     { id: 'intake',        label: 'Intake & Handling',  render: renderIntakeHandling },
+    { id: 'leds',          label: 'LEDs',               render: renderLEDs },
     { id: 'field',         label: 'Pose',               render: renderField },
     { id: 'vision',        label: 'Vision',             render: renderVision },
     { id: 'diagnostics',   label: 'Diagnostics',        render: renderDiagnostics },
